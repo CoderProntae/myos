@@ -10,6 +10,7 @@
 #include "browser.h"
 #include "e1000.h"
 #include "net.h"
+#include "dns.h"
 
 static int start_open=0, window_open=0;
 static int settings_selected_depth=32, current_hz=60, selected_hz=60;
@@ -121,20 +122,26 @@ static int gt_process(void) {
     gt_putc('\n');
     const char* c = gt_cmd;
     while (*c == ' ') c++;
+
     if (!k_strlen(c)) return 0;
     if (!k_strcmp(c, "exit")) return 1;
     if (!k_strcmp(c, "clear")) { gt_clear(); return 0; }
+
     if (!k_strcmp(c, "help")) {
         gt_puts_c("  Komutlar:\n", 3);
-        gt_puts_c("  help", 2); gt_puts_c("     - Bu mesaj\n", 0);
-        gt_puts_c("  clear", 2); gt_puts_c("    - Ekrani temizle\n", 0);
-        gt_puts_c("  echo", 2); gt_puts_c("     - Yazi yazdir\n", 0);
-        gt_puts_c("  time", 2); gt_puts_c("     - Saat\n", 0);
-        gt_puts_c("  sysinfo", 2); gt_puts_c("  - Sistem bilgisi\n", 0);
-        gt_puts_c("  exit", 2); gt_puts_c("     - Masaustune don\n", 0);
-        gt_puts_c("  reboot", 2); gt_puts_c("   - Yeniden baslat\n", 0);
+        gt_puts_c("  help", 2);      gt_puts_c("      - Bu mesaj\n", 0);
+        gt_puts_c("  clear", 2);     gt_puts_c("     - Ekrani temizle\n", 0);
+        gt_puts_c("  echo", 2);      gt_puts_c("      - Yazi yazdir\n", 0);
+        gt_puts_c("  time", 2);      gt_puts_c("      - Saat\n", 0);
+        gt_puts_c("  sysinfo", 2);   gt_puts_c("   - Sistem bilgisi\n", 0);
+        gt_puts_c("  netinfo", 2);   gt_puts_c("   - Ag bilgisi\n", 0);
+        gt_puts_c("  ping", 2);      gt_puts_c("      - Gateway'e ping\n", 0);
+        gt_puts_c("  nslookup", 2);  gt_puts_c("  - DNS cozumle\n", 0);
+        gt_puts_c("  exit", 2);      gt_puts_c("      - Masaustune don\n", 0);
+        gt_puts_c("  reboot", 2);    gt_puts_c("    - Yeniden baslat\n", 0);
         return 0;
     }
+
     if (!k_strcmp(c, "time")) {
         outb(0x70, 4); uint8_t h = bcd2bin(inb(0x71));
         outb(0x70, 2); uint8_t m = bcd2bin(inb(0x71));
@@ -144,31 +151,168 @@ static int gt_process(void) {
         t[0]='0'+h/10; t[1]='0'+h%10; t[2]=':';
         t[3]='0'+m/10; t[4]='0'+m%10; t[5]=':';
         t[6]='0'+s/10; t[7]='0'+s%10; t[8]=0;
-        gt_puts_c(t, 3);
-        gt_putc('\n');
+        gt_puts_c(t, 3); gt_putc('\n');
         return 0;
     }
+
     if (!k_strcmp(c, "sysinfo")) {
-        char v[13]; uint32_t eb, ec, ed;
-        __asm__ __volatile__("cpuid":"=b"(eb),"=c"(ec),"=d"(ed):"a"(0));
-        *((uint32_t*)&v[0])=eb; *((uint32_t*)&v[4])=ed;
-        *((uint32_t*)&v[8])=ec; v[12]=0;
-        monitor_info_t* mi = vesa_get_monitor_info();
+        char v[13]; uint32_t eb2, ec2, ed2;
+        __asm__ __volatile__("cpuid":"=b"(eb2),"=c"(ec2),"=d"(ed2):"a"(0));
+        *((uint32_t*)&v[0])=eb2; *((uint32_t*)&v[4])=ed2;
+        *((uint32_t*)&v[8])=ec2; v[12]=0;
+        monitor_info_t* mi2 = vesa_get_monitor_info();
         gt_puts_c("  CPU     : ", 0); gt_puts_c(v, 1); gt_putc('\n');
-        gt_puts_c("  Adaptor : ", 0); gt_puts_c(mi->adapter_name, 2); gt_putc('\n');
-        gt_puts_c("  Monitor : ", 0); gt_puts_c(mi->monitor_name, 5); gt_putc('\n');
-        char vb[12]; k_itoa((int)(mi->vram_bytes/1024/1024), vb, 10);
-        gt_puts_c("  VRAM    : ", 0); gt_puts_c(vb, 3); gt_puts_c(" MB\n", 0);
+        gt_puts_c("  Adaptor : ", 0); gt_puts_c(mi2->adapter_name, 2); gt_putc('\n');
         gt_puts_c("  Ortam   : ", 0);
-        gt_puts_c(mi->is_virtual ? "Sanal Makine" : "Fiziksel", mi->is_virtual ? 3 : 1);
+        gt_puts_c(mi2->is_virtual ? "Sanal Makine" : "Fiziksel", mi2->is_virtual ? 3 : 1);
         gt_putc('\n');
         return 0;
     }
+
+    if (!k_strcmp(c, "netinfo")) {
+        e1000_info_t* ni2 = e1000_get_info();
+        net_config_t* nc2 = net_get_config();
+        if (!ni2->initialized) {
+            gt_puts_c("  Ag karti baslatilmadi.\n", 4);
+            return 0;
+        }
+        /* MAC */
+        char ms3[20];
+        for (int m=0;m<6;m++){
+            uint8_t hi2=ni2->mac[m]>>4, lo2=ni2->mac[m]&0x0F;
+            ms3[m*3]  =hi2<10?'0'+hi2:'A'+(hi2-10);
+            ms3[m*3+1]=lo2<10?'0'+lo2:'A'+(lo2-10);
+            ms3[m*3+2]=(m<5)?':':'\0';
+        }
+        ms3[17]='\0';
+        gt_puts_c("  MAC     : ", 0); gt_puts_c(ms3, 1); gt_putc('\n');
+        gt_puts_c("  Link    : ", 0);
+        if (ni2->link_up) {
+            char spd2[16]; k_itoa(ni2->speed, spd2, 10);
+            k_strcpy(spd2+k_strlen(spd2), " Mbps");
+            gt_puts_c(spd2, 1);
+        } else {
+            gt_puts_c("Bagli Degil", 4);
+        }
+        gt_putc('\n');
+
+        if (nc2->configured) {
+            char ips2[20];
+            k_itoa(nc2->our_ip[0],ips2,10); k_strcpy(ips2+k_strlen(ips2),".");
+            k_itoa(nc2->our_ip[1],ips2+k_strlen(ips2),10); k_strcpy(ips2+k_strlen(ips2),".");
+            k_itoa(nc2->our_ip[2],ips2+k_strlen(ips2),10); k_strcpy(ips2+k_strlen(ips2),".");
+            k_itoa(nc2->our_ip[3],ips2+k_strlen(ips2),10);
+            gt_puts_c("  IP      : ", 0); gt_puts_c(ips2, 2); gt_putc('\n');
+
+            char gw2[20];
+            k_itoa(nc2->gateway_ip[0],gw2,10); k_strcpy(gw2+k_strlen(gw2),".");
+            k_itoa(nc2->gateway_ip[1],gw2+k_strlen(gw2),10); k_strcpy(gw2+k_strlen(gw2),".");
+            k_itoa(nc2->gateway_ip[2],gw2+k_strlen(gw2),10); k_strcpy(gw2+k_strlen(gw2),".");
+            k_itoa(nc2->gateway_ip[3],gw2+k_strlen(gw2),10);
+            gt_puts_c("  Gateway : ", 0); gt_puts_c(gw2, 2); gt_putc('\n');
+
+            char dns2[20];
+            k_itoa(nc2->dns_ip[0],dns2,10); k_strcpy(dns2+k_strlen(dns2),".");
+            k_itoa(nc2->dns_ip[1],dns2+k_strlen(dns2),10); k_strcpy(dns2+k_strlen(dns2),".");
+            k_itoa(nc2->dns_ip[2],dns2+k_strlen(dns2),10); k_strcpy(dns2+k_strlen(dns2),".");
+            k_itoa(nc2->dns_ip[3],dns2+k_strlen(dns2),10);
+            gt_puts_c("  DNS     : ", 0); gt_puts_c(dns2, 2); gt_putc('\n');
+        }
+
+        char txs2[10], rxs2[10];
+        k_itoa((int)ni2->tx_count, txs2, 10);
+        k_itoa((int)ni2->rx_count, rxs2, 10);
+        gt_puts_c("  Paket   : TX=", 0); gt_puts_c(txs2, 5);
+        gt_puts_c(" RX=", 0); gt_puts_c(rxs2, 5); gt_putc('\n');
+        return 0;
+    }
+
+    if (!k_strcmp(c, "ping")) {
+        net_config_t* nc3 = net_get_config();
+        if (!nc3->configured) {
+            gt_puts_c("  Ag yapilandirilmamis.\n", 4);
+            return 0;
+        }
+        gt_puts_c("  Gateway'e ping gonderiliyor (", 0);
+        char gip[20];
+        k_itoa(nc3->gateway_ip[0],gip,10); k_strcpy(gip+k_strlen(gip),".");
+        k_itoa(nc3->gateway_ip[1],gip+k_strlen(gip),10); k_strcpy(gip+k_strlen(gip),".");
+        k_itoa(nc3->gateway_ip[2],gip+k_strlen(gip),10); k_strcpy(gip+k_strlen(gip),".");
+        k_itoa(nc3->gateway_ip[3],gip+k_strlen(gip),10);
+        gt_puts_c(gip, 2);
+        gt_puts_c(")...\n", 0);
+
+        int ret = net_send_ping(nc3->gateway_ip, 1);
+        if (ret < 0) {
+            gt_puts_c("  Gonderilemedi!\n", 4);
+            return 0;
+        }
+
+        /* Cevap bekle */
+        int got_reply = 0;
+        for (int w = 0; w < 30; w++) {
+            for (volatile int d = 0; d < 200000; d++);
+            net_poll();
+            if (net_get_ping_reply()) {
+                got_reply = 1;
+                break;
+            }
+        }
+
+        if (got_reply) {
+            gt_puts_c("  Cevap alindi! Ping basarili.\n", 1);
+        } else {
+            gt_puts_c("  Cevap alinamadi (timeout).\n", 4);
+        }
+        return 0;
+    }
+
+    if (!k_strncmp(c, "nslookup ", 9)) {
+        const char* host = c + 9;
+        while (*host == ' ') host++;
+
+        if (k_strlen(host) == 0) {
+            gt_puts_c("  Kullanim: nslookup alan.adi\n", 3);
+            return 0;
+        }
+
+        gt_puts_c("  ", 0);
+        gt_puts_c(host, 2);
+        gt_puts_c(" cozumleniyor...\n", 0);
+
+        uint8_t ip_result[4];
+        int ret = dns_resolve(host, ip_result);
+
+        if (ret == 0) {
+            char ips3[20];
+            k_itoa(ip_result[0],ips3,10); k_strcpy(ips3+k_strlen(ips3),".");
+            k_itoa(ip_result[1],ips3+k_strlen(ips3),10); k_strcpy(ips3+k_strlen(ips3),".");
+            k_itoa(ip_result[2],ips3+k_strlen(ips3),10); k_strcpy(ips3+k_strlen(ips3),".");
+            k_itoa(ip_result[3],ips3+k_strlen(ips3),10);
+            gt_puts_c("  Sonuc: ", 0);
+            gt_puts_c(ips3, 1);
+            gt_putc('\n');
+        } else {
+            gt_puts_c("  DNS cozumlenemedi! Hata: ", 4);
+            char err[8]; k_itoa(ret, err, 10);
+            gt_puts_c(err, 4);
+            gt_putc('\n');
+        }
+        return 0;
+    }
+
+    if (!k_strcmp(c, "nslookup")) {
+        gt_puts_c("  Kullanim: nslookup alan.adi\n", 3);
+        gt_puts_c("  Ornek : nslookup google.com\n", 0);
+        return 0;
+    }
+
     if (!k_strncmp(c, "echo ", 5)) {
-        gt_puts_c("  ", 0); gt_puts_c(c + 5, 5); gt_putc('\n');
+        gt_puts_c("  ", 0); gt_puts_c(c+5, 5); gt_putc('\n');
         return 0;
     }
     if (!k_strcmp(c, "reboot")) { outb(0x64, 0xFE); return 0; }
+
     gt_puts_c("  Bilinmeyen: ", 4);
     gt_puts_c(c, 5);
     gt_puts_c("\n  'help' yazin.\n", 0);
