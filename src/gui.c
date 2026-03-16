@@ -1,3 +1,4 @@
+#include "browser.h"
 #include "gui.h"
 #include "vesa.h"
 #include "mouse.h"
@@ -114,9 +115,10 @@ typedef struct{int x,y;const char*label;int id;}dicon_t;
 static dicon_t dicons[]={
     {30,40,"Bilgisayarim",1},{30,110,"Terminal",2},{30,180,"Hakkinda",3},
     {30,250,"Ekran Ayar",4},{30,320,"Dosya Gezgini",5},
-    {30,390,"Not Defteri",6},{30,460,"Hesap Mak.",7}
+    {30,390,"Not Defteri",6},{30,460,"Hesap Mak.",7},
+    {130,40,"Tarayici",8}
 };
-#define DICON_COUNT 7
+#define DICON_COUNT 8
 
 static void draw_icons(void){for(int i=0;i<DICON_COUNT;i++){int ix=dicons[i].x,iy=dicons[i].y;if(dicons[i].id==1)draw_icon_computer(ix,iy);else if(dicons[i].id==2)draw_icon_terminal(ix,iy);else if(dicons[i].id==3)draw_icon_info(ix,iy);else if(dicons[i].id==4)draw_icon_display(ix,iy);else if(dicons[i].id==5){draw_folder_icon(ix+4,iy+4);vesa_fill_rect(ix+4,iy+6,14,10,0xFFCC33);}else if(dicons[i].id==6){vesa_fill_rect(ix+2,iy+2,20,18,0xEEEEEE);vesa_draw_rect_outline(ix+2,iy+2,20,18,0x888888);vesa_fill_rect(ix+5,iy+6,14,2,0x333333);vesa_fill_rect(ix+5,iy+10,14,2,0x333333);vesa_fill_rect(ix+5,iy+14,10,2,0x333333);}else if(dicons[i].id==7){vesa_fill_rect(ix+2,iy+2,20,20,0x2D2D44);vesa_draw_rect_outline(ix+2,iy+2,20,20,COLOR_ACCENT);vesa_draw_string(ix+6,iy+6,"1+2",COLOR_TEXT_GREEN,0x2D2D44);}int tw=k_strlen(dicons[i].label)*8;vesa_draw_string_nobg(ix+12-tw/2,iy+28,dicons[i].label,COLOR_TEXT_WHITE);}}
 
