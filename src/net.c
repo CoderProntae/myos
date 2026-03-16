@@ -1,3 +1,4 @@
+#include "tcp.h"
 #include "net.h"
 #include "e1000.h"
 #include "string.h"
@@ -342,7 +343,7 @@ static void handle_ip(const uint8_t* data, uint16_t len) {
             handle_udp(payload, plen, ip->src_ip);
             break;
         case IP_PROTO_TCP:
-            /* Adim 4'te eklenecek */
+            tcp_handle_packet(payload, plen, ip->src_ip);
             break;
     }
 }
