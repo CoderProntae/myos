@@ -575,6 +575,7 @@ void gui_run(void) {
         vesa_copy_buffer();
 
         if (!ms.click) continue;
+        mouse_clear_click();
 
         /* Hata popup */
         if (window_open == 5 || window_open == 6) {
