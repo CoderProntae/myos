@@ -1,115 +1,103 @@
 #include "mouse.h"
+#include "vesa.h"
 #include "io.h"
 
-#define MOUSE_PORT   0x60
-#define MOUSE_STATUS 0x64
-#define MOUSE_CMD    0x64
+static int mx = 400, my = 300;
+static int sw = 800, sh = 600;
+static uint8_t prev_left = 0;
 
-#define SCREEN_W 640
-#define SCREEN_H 200
-
-static int mouse_x = 320;
-static int mouse_y = 100;
-static int initialized = 0;
-
-static void mouse_wait_write(void) {
-    int timeout = 100000;
-    while (timeout--) {
-        if (!(inb(MOUSE_STATUS) & 2)) return;
-    }
+static void mouse_wait_w(void) {
+    int t = 100000;
+    while (t--) { if (!(inb(0x64) & 2)) return; }
 }
 
-static void mouse_wait_read(void) {
-    int timeout = 100000;
-    while (timeout--) {
-        if (inb(MOUSE_STATUS) & 1) return;
-    }
+static void mouse_wait_r(void) {
+    int t = 100000;
+    while (t--) { if (inb(0x64) & 1) return; }
 }
 
-static void mouse_write(uint8_t data) {
-    mouse_wait_write();
-    outb(MOUSE_CMD, 0xD4);
-    mouse_wait_write();
-    outb(MOUSE_PORT, data);
-}
-
-static uint8_t mouse_read(void) {
-    mouse_wait_read();
-    return inb(MOUSE_PORT);
+static void mouse_cmd(uint8_t cmd) {
+    mouse_wait_w(); outb(0x64, 0xD4);
+    mouse_wait_w(); outb(0x60, cmd);
 }
 
 void mouse_init(void) {
-    mouse_wait_write();
-    outb(MOUSE_CMD, 0xA8);
+    mouse_wait_w(); outb(0x64, 0xA8);
 
-    mouse_wait_write();
-    outb(MOUSE_CMD, 0x20);
-    mouse_wait_read();
-    uint8_t status = inb(MOUSE_PORT);
+    mouse_wait_w(); outb(0x64, 0x20);
+    mouse_wait_r();
+    uint8_t status = inb(0x60);
     status |= 2;
     status &= (uint8_t)~0x20;
-    mouse_wait_write();
-    outb(MOUSE_CMD, 0x60);
-    mouse_wait_write();
-    outb(MOUSE_PORT, status);
+    mouse_wait_w(); outb(0x64, 0x60);
+    mouse_wait_w(); outb(0x60, status);
 
-    mouse_write(0xF6);
-    mouse_read();
+    mouse_cmd(0xF6); mouse_wait_r(); inb(0x60);
+    mouse_cmd(0xF4); mouse_wait_r(); inb(0x60);
 
-    mouse_write(0xF4);
-    mouse_read();
-
-    mouse_x = 320;
-    mouse_y = 100;
-    initialized = 1;
+    sw = vesa_get_width();
+    sh = vesa_get_height();
+    mx = sw / 2;
+    my = sh / 2;
 }
 
 void mouse_poll(mouse_state_t* state) {
-    if (!initialized) {
-        state->x = mouse_x;
-        state->y = mouse_y;
-        state->col = mouse_x / 8;
-        state->row = mouse_y / 8;
-        state->left = 0;
-        state->right = 0;
-        state->middle = 0;
-        return;
-    }
+    state->click = 0;
 
-    if (inb(MOUSE_STATUS) & 1) {
-        uint8_t flags = inb(MOUSE_PORT);
+    if (inb(0x64) & 1) {
+        uint8_t flags = inb(0x60);
+        if (flags & 0x08) {
+            mouse_wait_r(); int8_t dx = (int8_t)inb(0x60);
+            mouse_wait_r(); int8_t dy = (int8_t)inb(0x60);
 
-        if (!(flags & 0x08)) {
-            state->x = mouse_x;
-            state->y = mouse_y;
-            state->col = mouse_x / 8;
-            state->row = mouse_y / 8;
-            state->left = 0;
-            state->right = 0;
-            state->middle = 0;
-            return;
+            mx += dx * 2;  /* hiz carpani */
+            my -= dy * 2;
+
+            if (mx < 0) mx = 0;
+            if (mx >= sw) mx = sw - 1;
+            if (my < 0) my = 0;
+            if (my >= sh) my = sh - 1;
+
+            state->left   = flags & 0x01;
+            state->right  = flags & 0x02;
+            state->middle = flags & 0x04;
+
+            /* Click event: basildigi an */
+            if (state->left && !prev_left) state->click = 1;
+            prev_left = state->left;
         }
-
-        mouse_wait_read();
-        int8_t dx = (int8_t)inb(MOUSE_PORT);
-        mouse_wait_read();
-        int8_t dy = (int8_t)inb(MOUSE_PORT);
-
-        mouse_x += dx;
-        mouse_y -= dy;
-
-        if (mouse_x < 0) mouse_x = 0;
-        if (mouse_x >= SCREEN_W) mouse_x = SCREEN_W - 1;
-        if (mouse_y < 0) mouse_y = 0;
-        if (mouse_y >= SCREEN_H) mouse_y = SCREEN_H - 1;
-
-        state->left = flags & 0x01;
-        state->right = flags & 0x02;
-        state->middle = flags & 0x04;
     }
 
-    state->x = mouse_x;
-    state->y = mouse_y;
-    state->col = mouse_x / 8;
-    state->row = mouse_y / 8;
+    state->x = mx;
+    state->y = my;
+}
+
+/* Modern ok isareti cursor */
+void mouse_draw_cursor(int cx, int cy) {
+    /* 12x16 ok isareti */
+    static const char* shape[] = {
+        "X...........",
+        "XX..........",
+        "XXX.........",
+        "XXXX........",
+        "XXXXX.......",
+        "XXXXXX......",
+        "XXXXXXX.....",
+        "XXXXXXXX....",
+        "XXXXXXXXX...",
+        "XXXXXXXXXX..",
+        "XXXXXXX.....",
+        "XXX.XXX.....",
+        "XX..XXX.....",
+        "X....XXX....",
+        ".....XXX....",
+        "......X.....",
+    };
+
+    for (int r = 0; r < 16; r++) {
+        for (int c = 0; c < 12; c++) {
+            if (shape[r][c] == 'X')
+                vesa_putpixel(cx + c, cy + r, COLOR_TEXT_WHITE);
+        }
+    }
 }
