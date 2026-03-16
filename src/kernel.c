@@ -4,6 +4,7 @@
 #include "gui.h"
 #include "pci.h"
 #include "e1000.h"
+#include "net.h"
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     (void)magic;
@@ -11,6 +12,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     mouse_init();
     pci_init();
     e1000_init();
+    net_init();
 
     setup_run();
     gui_run();
