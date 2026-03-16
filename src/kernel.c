@@ -7,6 +7,7 @@
 #include "net.h"
 #include "dns.h"
 #include "tcp.h"
+#include "http.h"
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     (void)magic;
@@ -17,6 +18,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     net_init();
     dns_init();
     tcp_init();
+    http_init();
 
     setup_run();
     gui_run();
