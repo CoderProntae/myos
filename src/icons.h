@@ -56,46 +56,57 @@ static inline void draw_windows_logo(int x, int y, uint32_t color) {
     vesa_fill_rect(x+9, y+9, 7, 7, color);
 }
 
-/* Ayarlar (gear) ikonu - 16x16 */
 static inline void draw_icon_gear(int x, int y, uint32_t color) {
-    /* Dis cember */
     for (int dy = -7; dy <= 7; dy++)
         for (int dx = -7; dx <= 7; dx++) {
             int d = dx*dx + dy*dy;
             if (d <= 49 && d >= 16)
                 vesa_putpixel(x+8+dx, y+8+dy, color);
         }
-    /* 4 dis */
-    vesa_fill_rect(x+7, y,    2, 3, color);
+    vesa_fill_rect(x+7, y, 2, 3, color);
     vesa_fill_rect(x+7, y+13, 2, 3, color);
-    vesa_fill_rect(x,   y+7,  3, 2, color);
-    vesa_fill_rect(x+13,y+7,  3, 2, color);
-    /* Capraz disler */
-    vesa_fill_rect(x+2,  y+2,  2, 2, color);
-    vesa_fill_rect(x+12, y+2,  2, 2, color);
-    vesa_fill_rect(x+2,  y+12, 2, 2, color);
+    vesa_fill_rect(x, y+7, 3, 2, color);
+    vesa_fill_rect(x+13, y+7, 3, 2, color);
+    vesa_fill_rect(x+2, y+2, 2, 2, color);
+    vesa_fill_rect(x+12, y+2, 2, 2, color);
+    vesa_fill_rect(x+2, y+12, 2, 2, color);
     vesa_fill_rect(x+12, y+12, 2, 2, color);
-    /* Ic bosluk (arka plan rengi ile) */
     for (int dy2 = -3; dy2 <= 3; dy2++)
         for (int dx2 = -3; dx2 <= 3; dx2++)
             if (dx2*dx2 + dy2*dy2 <= 9)
                 vesa_putpixel(x+8+dx2, y+8+dy2, COLOR_TASKBAR);
 }
 
-/* Ekran ikonu - 24x24 */
 static inline void draw_icon_display(int x, int y) {
-    /* Monitor cerceve */
     vesa_fill_rect(x+1, y+1, 22, 16, 0x444466);
-    /* Ekran */
     vesa_fill_rect(x+2, y+2, 20, 14, 0x1E1E2E);
-    /* Renk cubugu */
     vesa_fill_rect(x+4, y+5, 4, 8, 0xFF4444);
     vesa_fill_rect(x+8, y+5, 4, 8, 0x44FF44);
     vesa_fill_rect(x+12, y+5, 4, 8, 0x4444FF);
     vesa_fill_rect(x+16, y+5, 4, 8, 0xFFFF44);
-    /* Ayak */
     vesa_fill_rect(x+9, y+17, 6, 2, 0x555577);
     vesa_fill_rect(x+7, y+19, 10, 2, 0x555577);
+}
+
+/* Klasor ikonu - 16x16 */
+static inline void draw_folder_icon(int x, int y) {
+    vesa_fill_rect(x, y+2, 6, 2, 0xDDAA22);
+    vesa_fill_rect(x, y+4, 14, 10, 0xFFCC33);
+    vesa_draw_rect_outline(x, y+4, 14, 10, 0xAA8811);
+}
+
+/* Dosya ikonu - 16x16 */
+static inline void draw_file_icon(int x, int y) {
+    vesa_fill_rect(x+1, y+1, 12, 14, 0xEEEEEE);
+    vesa_draw_rect_outline(x+1, y+1, 12, 14, 0x888888);
+    vesa_fill_rect(x+3, y+4, 8, 2, 0x4488CC);
+    vesa_fill_rect(x+3, y+8, 8, 2, 0x4488CC);
+}
+
+/* Geri ok ikonu */
+static inline void draw_back_icon(int x, int y) {
+    vesa_fill_rect(x+2, y+6, 10, 4, 0x6688CC);
+    vesa_fill_rect(x+2, y+4, 4, 8, 0x6688CC);
 }
 
 #endif
