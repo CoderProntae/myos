@@ -99,7 +99,7 @@ static void gui_terminal(void){
     gt_puts_c("Cikis: ",0);gt_puts_c("exit",1);gt_puts_c(" | Yardim: ",0);gt_puts_c("help\n\n",1);
     gt_prompt();gt_render();
     while(1){
-        char c=keyboard_getchar();
+        int c=keyboard_getchar();
         if(c==KEY_ESC)return;
         if(c==KEY_F4&&keyboard_alt_held())return;
         if(c=='\n'){gt_cmd[gt_cmd_len]=0;if(gt_process())return;gt_prompt();}
@@ -165,7 +165,7 @@ int abx=wx+ww/2-80,aby=wy+wh-42;int ah=(mx2>=abx&&mx2<abx+160&&my2>=aby&&my2<aby
 static char err_title[32],err_l1[64],err_l2[64],err_l3[64];
 static void show_error(int mx2,int my2){int pw=400,ph=240,px=vesa_get_width()/2-pw/2,py=vesa_get_height()/2-ph/2;uint32_t*bb=backbuffer;int sw2=vesa_get_width(),sh2=vesa_get_height();for(int y=0;y<sh2;y++)for(int x=0;x<sw2;x++)if(x<px||x>=px+pw||y<py||y>=py+ph){uint32_t o=bb[y*sw2+x];bb[y*sw2+x]=((o>>16&0xFF)/3<<16)|((o>>8&0xFF)/3<<8)|(o&0xFF)/3;}vesa_fill_rect(px,py,pw,ph,COLOR_WINDOW_BG);vesa_fill_rect(px,py,pw,32,0x881122);vesa_draw_rect_outline(px,py,pw,ph,0xAA2233);vesa_draw_string(px+16,py+8,err_title,COLOR_TEXT_WHITE,0x881122);draw_close_button(px+pw-24,py+8,COLOR_CLOSE_BTN);int icx=px+pw/2,icy=py+72;for(int dy=-18;dy<=18;dy++)for(int dx=-18;dx<=18;dx++){int d=dx*dx+dy*dy;if(d<=324&&d>=256)vesa_putpixel_raw(icx+dx,icy+dy,COLOR_TEXT_RED);}vesa_fill_rect(icx-2,icy-10,4,12,COLOR_TEXT_RED);vesa_fill_rect(icx-2,icy+5,4,4,COLOR_TEXT_RED);vesa_draw_string(px+30,py+105,err_l1,COLOR_TEXT_WHITE,COLOR_WINDOW_BG);vesa_draw_string(px+30,py+125,err_l2,COLOR_TEXT_YELLOW,COLOR_WINDOW_BG);vesa_draw_string(px+30,py+145,err_l3,COLOR_TEXT_GREY,COLOR_WINDOW_BG);int obx=px+pw/2-60,oby=py+ph-45;int oh=(mx2>=obx&&mx2<obx+120&&my2>=oby&&my2<oby+32);vesa_fill_rect(obx,oby,120,32,oh?COLOR_START_HOVER:COLOR_ACCENT);vesa_draw_rect_outline(obx,oby,120,32,0x005599);vesa_draw_string(obx+36,oby+8,"Tamam",COLOR_TEXT_WHITE,oh?COLOR_START_HOVER:COLOR_ACCENT);}
 
-static void do_shutdown(void){vesa_fill_screen(COLOR_BLACK);vesa_draw_string(320,290,"Kapatiliyor...",COLOR_TEXT_WHITE,COLOR_BLACK);vesa_copy_buffer();outb(0x604,0x2000);outb(0xB004,0x2000);outb(0x4004,0x3400);__asm__ __volatile__("cli;hlt");}
+static void do_shutdown(void){vesa_fill_screen(COLOR_BLACK);vesa_draw_string(320,290,"Kapatiliyor...",COLOR_TEXT_WHITE,COLOR_BLACK);vesa_copy_buffer();outw(0x604,0x2000);outw(0xB004,0x2000);outw(0x4004,0x3400);__asm__ __volatile__("cli;hlt");}
 
 void gui_run(void){
     mouse_state_t ms;int sh2=vesa_get_height(),sw2=vesa_get_width();
@@ -176,7 +176,7 @@ void gui_run(void){
     while(1){
         mouse_poll(&ms);
         /* Klavye okuma - Alt+F4 yakalamak icin */
-        char key=keyboard_poll();
+        int key=keyboard_poll();
         if(key==KEY_F4&&keyboard_alt_held()){
             if(window_open){window_open=0;continue;}
             /* Masaustunde Alt+F4 = kapat */
