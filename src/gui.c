@@ -11,6 +11,7 @@
 #include "e1000.h"
 #include "net.h"
 #include "dns.h"
+#include "tcp.h"
 
 static int start_open=0, window_open=0;
 static int settings_selected_depth=32, current_hz=60, selected_hz=60;
@@ -135,6 +136,7 @@ static int gt_process(void) {
         gt_puts_c("  time", 2);      gt_puts_c("      - Saat\n", 0);
         gt_puts_c("  sysinfo", 2);   gt_puts_c("   - Sistem bilgisi\n", 0);
         gt_puts_c("  netinfo", 2);   gt_puts_c("   - Ag bilgisi\n", 0);
+        gt_puts_c("  tcptest", 2);   gt_puts_c("   - TCP baglanti testi\n", 0);
         gt_puts_c("  ping", 2);      gt_puts_c("      - Gateway'e ping\n", 0);
         gt_puts_c("  nslookup", 2);  gt_puts_c("  - DNS cozumle\n", 0);
         gt_puts_c("  exit", 2);      gt_puts_c("      - Masaustune don\n", 0);
