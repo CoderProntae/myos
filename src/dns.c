@@ -151,9 +151,8 @@ int dns_resolve(const char* hostname, uint8_t ip_out[4]) {
 
     /* Cevap bekle — polling */
     uint8_t response[512];
-    for (int attempt = 0; attempt < 50; attempt++) {
-        /* Biraz bekle */
-        for (volatile int w = 0; w < 200000; w++);
+    for (int attempt = 0; attempt < 100; attempt++) {
+        for (volatile int w = 0; w < 500000; w++);
 
         /* Gelen paketleri isle */
         net_poll();
