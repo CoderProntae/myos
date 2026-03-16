@@ -36,12 +36,13 @@ jobs:
         gcc $FLAGS src/shell.c    -o build/shell.o
         gcc $FLAGS src/gui.c      -o build/gui.o
         gcc $FLAGS src/setup.c    -o build/setup.o
+        gcc $FLAGS src/apps.c     -o build/apps.o
 
     - name: Link kernel
       run: |
         ld -m elf_i386 -T linker.ld -nostdlib -o build/myos.bin \
           build/boot.o build/kernel.o build/vesa.o build/vga.o build/mouse.o \
-          build/keyboard.o build/string.o build/shell.o build/gui.o build/setup.o
+          build/keyboard.o build/string.o build/shell.o build/gui.o build/setup.o build/apps.o
 
     - name: Create ISO
       run: |
