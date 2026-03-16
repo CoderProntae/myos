@@ -1,12 +1,15 @@
 #include "vga.h"
+#include "mouse.h"
 #include "setup.h"
+#include "gui.h"
 
 void kernel_main(void) {
     vga_init();
-    vga_hide_cursor();
+    mouse_init();
+
+    /* Kurulum sihirbazi */
     setup_run();
 
-    for (;;) {
-        __asm__ __volatile__("hlt");
-    }
+    /* Masaustu */
+    gui_run();
 }
