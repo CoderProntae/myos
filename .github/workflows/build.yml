@@ -1,0 +1,59 @@
+name: Build MyOS ISO
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:     # Elle tetikleme butonu
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y nasm gcc grub-pc-bin grub-common xorriso gcc-multilib
+
+    - name: Compile boot.asm
+      run: nasm -f elf32 src/boot.asm -o build/boot.o
+      env:
+        TERM: xterm
+
+    - name: Create build dir
+      run: mkdir -p build
+
+    - name: Compile Assembly
+      run: nasm -f elf32 src/boot.asm -o build/boot.o
+
+    - name: Compile C files
+      run: |
+        FLAGS="-m32 -std=c99 -O2 -ffreestanding -fno-stack-protector -fno-pie -fno-builtin -Wall -Wextra -Wno-unused-parameter -c"
+        gcc $FLAGS src/kernel.c   -o build/kernel.o
+        gcc $FLAGS src/vga.c      -o build/vga.o
+        gcc $FLAGS src/keyboard.c -o build/keyboard.o
+        gcc $FLAGS src/string.c   -o build/string.o
+        gcc $FLAGS src/shell.c    -o build/shell.o
+
+    - name: Link kernel
+      run: |
+        ld -m elf_i386 -T linker.ld -nostdlib -o build/myos.bin \
+          build/boot.o build/kernel.o build/vga.o build/keyboard.o \
+          build/string.o build/shell.o
+
+    - name: Create ISO
+      run: |
+        mkdir -p isodir/boot/grub
+        cp build/myos.bin isodir/boot/myos.bin
+        cp grub.cfg isodir/boot/grub/grub.cfg
+        grub-mkrescue -o myos.iso isodir
+
+    - name: Upload ISO
+      uses: actions/upload-artifact@v4
+      with:
+        name: myos-iso
+        path: myos.iso
+        retention-days: 30
