@@ -18,10 +18,15 @@ static const char scancode_shift[] = {
 static int shift_pressed = 0;
 
 char keyboard_getchar(void) {
-    uint8_t sc;
     while (1) {
-        while (!(inb(0x64) & 1));
-        sc = inb(0x60);
+        uint8_t status = inb(0x64);
+        if (!(status & 1)) continue;
+
+        uint8_t sc = inb(0x60);
+
+        /* Mouse verisi ise atla (bit 5) */
+        if (status & 0x20) continue;
+
         if (sc == 0x2A || sc == 0x36) { shift_pressed = 1; continue; }
         if (sc == 0xAA || sc == 0xB6) { shift_pressed = 0; continue; }
         if (sc & 0x80) continue;
