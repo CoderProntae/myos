@@ -43,6 +43,7 @@ jobs:
         gcc $FLAGS src/net.c      -o build/net.o
         gcc $FLAGS src/dns.c      -o build/dns.o
         gcc $FLAGS src/tcp.c      -o build/tcp.o
+        gcc $FLAGS src/http.c     -o build/http.o
 
     - name: Link kernel
       run: |
@@ -50,7 +51,7 @@ jobs:
           build/boot.o build/kernel.o build/vesa.o build/vga.o build/mouse.o \
           build/keyboard.o build/string.o build/shell.o build/gui.o \
           build/setup.o build/apps.o build/browser.o build/pci.o \
-          build/e1000.o build/net.o build/dns.o build/tcp.o
+          build/e1000.o build/net.o build/dns.o build/tcp.o build/http.o
 
     - name: Create ISO
       run: |
