@@ -28,19 +28,19 @@ jobs:
       run: |
         FLAGS="-m32 -std=c99 -O2 -ffreestanding -fno-stack-protector -fno-pie -fno-builtin -Wall -Wextra -Wno-unused-parameter -c"
         gcc $FLAGS src/kernel.c   -o build/kernel.o
-        gcc $FLAGS src/vga.c      -o build/vga.o
+        gcc $FLAGS src/vesa.c     -o build/vesa.o
+        gcc $FLAGS src/mouse.c    -o build/mouse.o
         gcc $FLAGS src/keyboard.c -o build/keyboard.o
         gcc $FLAGS src/string.c   -o build/string.o
         gcc $FLAGS src/shell.c    -o build/shell.o
-        gcc $FLAGS src/mouse.c    -o build/mouse.o
         gcc $FLAGS src/gui.c      -o build/gui.o
         gcc $FLAGS src/setup.c    -o build/setup.o
 
     - name: Link kernel
       run: |
         ld -m elf_i386 -T linker.ld -nostdlib -o build/myos.bin \
-          build/boot.o build/kernel.o build/vga.o build/keyboard.o \
-          build/string.o build/shell.o build/mouse.o build/gui.o build/setup.o
+          build/boot.o build/kernel.o build/vesa.o build/mouse.o \
+          build/keyboard.o build/string.o build/shell.o build/gui.o build/setup.o
 
     - name: Create ISO
       run: |
