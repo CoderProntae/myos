@@ -533,6 +533,7 @@ void app_browser(void) {
 
         /* Tiklama */
         if (!ms.click) continue;
+        mouse_clear_click();
 
         int ny = 30;
 
