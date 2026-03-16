@@ -13,6 +13,5 @@ typedef struct {
 void mouse_init(void);
 void mouse_poll(mouse_state_t* state);
 void mouse_draw_cursor(int x, int y);
-void mouse_clear_click(void);
 
 #endif
