@@ -8,6 +8,7 @@
 #include "pci.h"
 #include "apps.h"
 #include "browser.h"
+#include "e1000.h"
 
 static int start_open=0, window_open=0;
 static int settings_selected_depth=32, current_hz=60, selected_hz=60;
@@ -402,6 +403,53 @@ static void show_sysinfo(void) {
         vesa_fill_rect(wx+10, cy, ww-20, 20, 0x3A1A1A);
         vesa_draw_rect_outline(wx+10, cy, ww-20, 20, 0x882222);
         vesa_draw_string(wx+20, cy+2, "Ag karti bulunamadi", COLOR_TEXT_RED, 0x3A1A1A);
+    }
+        /* Ag Karti Detaylari */
+    cy += 26;
+    e1000_info_t* ni = e1000_get_info();
+    if (ni->initialized) {
+        vesa_fill_rect(wx+10, cy, ww-20, 1, COLOR_WINDOW_BORDER);
+        cy += 6;
+        vesa_draw_string(wx+15, cy, "Ag Karti Detaylari:", COLOR_TEXT_CYAN, COLOR_WINDOW_BG);
+        cy += 18;
+
+        /* MAC adresi */
+        char mac_str[20];
+        for (int m = 0; m < 6; m++) {
+            uint8_t hi = ni->mac[m] >> 4;
+            uint8_t lo = ni->mac[m] & 0x0F;
+            mac_str[m*3]   = hi < 10 ? '0'+hi : 'A'+(hi-10);
+            mac_str[m*3+1] = lo < 10 ? '0'+lo : 'A'+(lo-10);
+            mac_str[m*3+2] = (m < 5) ? ':' : '\0';
+        }
+        mac_str[17] = '\0';
+        vesa_draw_string(wx+20, cy, "MAC:", COLOR_TEXT_GREY, COLOR_WINDOW_BG);
+        vesa_draw_string(wx+120, cy, mac_str, COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
+        cy += 16;
+
+        /* Link durumu */
+        vesa_draw_string(wx+20, cy, "Link:", COLOR_TEXT_GREY, COLOR_WINDOW_BG);
+        if (ni->link_up) {
+            char spd[16];
+            k_itoa(ni->speed, spd, 10);
+            k_strcpy(spd + k_strlen(spd), " Mbps");
+            vesa_draw_string(wx+120, cy, spd, COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
+            vesa_draw_string(wx+220, cy,
+                ni->full_duplex ? "Full Duplex" : "Half Duplex",
+                COLOR_TEXT_WHITE, COLOR_WINDOW_BG);
+        } else {
+            vesa_draw_string(wx+120, cy, "Bagli Degil", COLOR_TEXT_RED, COLOR_WINDOW_BG);
+        }
+        cy += 16;
+
+        /* Paket sayaci */
+        char txs[16], rxs[16];
+        k_itoa((int)ni->tx_count, txs, 10);
+        k_itoa((int)ni->rx_count, rxs, 10);
+        vesa_draw_string(wx+20, cy, "TX:", COLOR_TEXT_GREY, COLOR_WINDOW_BG);
+        vesa_draw_string(wx+120, cy, txs, COLOR_TEXT_WHITE, COLOR_WINDOW_BG);
+        vesa_draw_string(wx+200, cy, "RX:", COLOR_TEXT_GREY, COLOR_WINDOW_BG);
+        vesa_draw_string(wx+280, cy, rxs, COLOR_TEXT_WHITE, COLOR_WINDOW_BG);
     }
 }
 
