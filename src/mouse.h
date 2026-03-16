@@ -4,16 +4,13 @@
 #include <stdint.h>
 
 typedef struct {
-    int x;
-    int y;
-    int col;
-    int row;
-    uint8_t left;
-    uint8_t right;
-    uint8_t middle;
+    int x, y;
+    uint8_t left, right, middle;
+    uint8_t click;     /* single click event */
 } mouse_state_t;
 
 void mouse_init(void);
 void mouse_poll(mouse_state_t* state);
+void mouse_draw_cursor(int x, int y);
 
 #endif
