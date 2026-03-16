@@ -1084,11 +1084,10 @@ void gui_run(void) {
         }
 
         /* Baslat menu */
+        /* Baslat menu */
         if (start_open) {
             int smy = sh2 - 40 - 320;
-            int menu_clicked = 0;
             for (int i = 0; i < 9; i++) {
-                int 
                 int iy = smy + 48 + i * 28;
                 if (ms.x >= 0 && ms.x < 240 && ms.y >= iy && ms.y < iy + 28) {
                     start_open = 0;
@@ -1097,8 +1096,8 @@ void gui_run(void) {
                     else if (i == 2) app_notepad();
                     else if (i == 3) app_calculator();
                     else if (i == 4) app_browser();
-                    else if (i == 5) window_open = 1;
-                    else if (i == 6) window_open = 2;
+                    else if (i == 5) { window_open = 1; }
+                    else if (i == 6) { window_open = 2; }
                     else if (i == 7) outb(0x64, 0xFE);
                     else if (i == 8) do_shutdown();
                     break;
