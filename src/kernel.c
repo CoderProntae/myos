@@ -1,15 +1,13 @@
-#include "vga.h"
+#include "vesa.h"
 #include "mouse.h"
 #include "setup.h"
 #include "gui.h"
 
-void kernel_main(void) {
-    vga_init();
+void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
+    (void)magic;
+    vesa_init(mbi);
     mouse_init();
 
-    /* Kurulum sihirbazi */
     setup_run();
-
-    /* Masaustu */
     gui_run();
 }
