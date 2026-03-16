@@ -141,6 +141,7 @@ static int gt_process(void) {
         gt_puts_c("  nslookup", 2);  gt_puts_c("  - DNS cozumle\n", 0);
         gt_puts_c("  exit", 2);      gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);    gt_puts_c("    - Yeniden baslat\n", 0);
+        gt_puts_c("  shutdown", 2);  gt_puts_c("  - Sistemi kapat\n", 0);
         return 0;
     }
 
@@ -456,6 +457,17 @@ static int gt_process(void) {
     gt_puts_c(c, 5);
     gt_puts_c("\n  'help' yazin.\n", 0);
     return 0;
+
+    if (!k_strcmp(c, "shutdown")) {
+    gt_puts_c("  Sistem kapatiliyor...\n", 3);
+    gt_render();
+    for (volatile int d = 0; d < 2000000; d++);
+    outw(0x604, 0x2000);
+    outw(0xB004, 0x2000);
+    outw(0x4004, 0x3400);
+    __asm__ __volatile__("cli; hlt");
+    return 0;
+    }
 }
 
 static void gui_terminal(void) {
@@ -1074,7 +1086,9 @@ void gui_run(void) {
         /* Baslat menu */
         if (start_open) {
             int smy = sh2 - 40 - 320;
+            int menu_clicked = 0;
             for (int i = 0; i < 9; i++) {
+                int 
                 int iy = smy + 48 + i * 28;
                 if (ms.x >= 0 && ms.x < 240 && ms.y >= iy && ms.y < iy + 28) {
                     start_open = 0;
