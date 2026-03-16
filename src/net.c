@@ -115,25 +115,28 @@ static int send_eth(const uint8_t dst[6], uint16_t type,
 static int resolve_mac(const uint8_t dst_ip[4], uint8_t mac_out[6]) {
     uint8_t next[4];
     int same = 1;
-    for (int i=0;i<4;i++)
-        if ((config.our_ip[i]&config.subnet_mask[i]) !=
-            (dst_ip[i]&config.subnet_mask[i])) { same=0; break; }
-    if (same) ip_copy(next,dst_ip);
-    else ip_copy(next,config.gateway_ip);
+    for (int i = 0; i < 4; i++)
+        if ((config.our_ip[i] & config.subnet_mask[i]) !=
+            (dst_ip[i] & config.subnet_mask[i])) { same = 0; break; }
+
+    if (same) ip_copy(next, dst_ip);
+    else ip_copy(next, config.gateway_ip);
 
     if (net_arp_lookup(next, mac_out)) return 1;
 
-    /* ARP request gonder, bekle, tekrar dene */
-    net_send_arp_request(next);
-    for (volatile int w=0;w<300000;w++);
-    net_poll();
-    if (net_arp_lookup(next, mac_out)) return 1;
+    /* 3 deneme yap, her seferinde daha uzun bekle */
+    for (int attempt = 0; attempt < 3; attempt++) {
+        net_send_arp_request(next);
 
-    /* Ikinci deneme */
-    net_send_arp_request(next);
-    for (volatile int w=0;w<500000;w++);
-    net_poll();
-    return net_arp_lookup(next, mac_out);
+        /* Bekleme: her denemede artan */
+        for (int w = 0; w < 20; w++) {
+            for (volatile int d = 0; d < 500000; d++);
+            net_poll();
+            if (net_arp_lookup(next, mac_out)) return 1;
+        }
+    }
+
+    return 0;
 }
 
 static int send_ip(const uint8_t dst_ip[4], uint8_t proto,
