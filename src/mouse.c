@@ -5,113 +5,195 @@
 static int mx, my;
 static int sw = 800, sh = 600;
 static uint8_t prev_left = 0;
-static int inited = 0;
+static int ready = 0;
 
-/* Byte bekle/oku */
-static void mwait_w(void) { int t=100000; while(t--) if(!(inb(0x64)&2)) return; }
-static void mwait_r(void) { int t=100000; while(t--) if(inb(0x64)&1) return; }
-static void mcmd(uint8_t c) { mwait_w(); outb(0x64,0xD4); mwait_w(); outb(0x60,c); }
+/* Paket okuma durumu */
+static int cycle = 0;
+static uint8_t pkt[3];
 
-/* Mouse buffer'ini bosalt */
-static void flush_mouse(void) {
-    int t = 1000;
-    while (t-- > 0 && (inb(0x64) & 1))
+static void wait_write(void) {
+    for (int i = 0; i < 100000; i++)
+        if (!(inb(0x64) & 2)) return;
+}
+
+static void wait_read(void) {
+    for (int i = 0; i < 100000; i++)
+        if (inb(0x64) & 1) return;
+}
+
+static void cmd(uint8_t c) {
+    wait_write();
+    outb(0x64, 0xD4);
+    wait_write();
+    outb(0x60, c);
+}
+
+static uint8_t read_ack(void) {
+    wait_read();
+    return inb(0x60);
+}
+
+/* Tampon temizle */
+static void flush(void) {
+    for (int i = 0; i < 100; i++) {
+        if (!(inb(0x64) & 1)) break;
         inb(0x60);
+    }
 }
 
 void mouse_init(void) {
-    flush_mouse();
+    flush();
 
-    mwait_w(); outb(0x64, 0xA8);            /* Aux port etkinlestir */
-    mwait_w(); outb(0x64, 0x20);            /* Durum oku */
-    mwait_r(); uint8_t st = inb(0x60);
-    st |= 2; st &= (uint8_t)~0x20;         /* IRQ12 + etkinlestir */
-    mwait_w(); outb(0x64, 0x60);
-    mwait_w(); outb(0x60, st);
+    /* Aux port etkinlestir */
+    wait_write();
+    outb(0x64, 0xA8);
 
-    mcmd(0xF6); mwait_r(); inb(0x60);       /* Varsayilanlara sifirla */
-    mcmd(0xF4); mwait_r(); inb(0x60);       /* Veri akisini baslat */
+    /* Controller yapilandirma oku */
+    wait_write();
+    outb(0x64, 0x20);
+    wait_read();
+    uint8_t status = inb(0x60);
 
-    /* Ornekleme hizini artir: 200 samples/sec */
-    mcmd(0xF3); mwait_r(); inb(0x60);
-    mcmd(200);  mwait_r(); inb(0x60);
+    /* IRQ12 etkinlestir, mouse clock etkinlestir */
+    status |= 0x02;       /* IRQ12 enable */
+    status &= ~0x20;      /* Mouse clock enable */
+
+    wait_write();
+    outb(0x64, 0x60);
+    wait_write();
+    outb(0x60, status);
+
+    /* Mouse sifirla */
+    cmd(0xFF);
+    read_ack(); /* ACK */
+    read_ack(); /* BAT result (0xAA) */
+    read_ack(); /* Device ID (0x00) */
+
+    /* Varsayilan ayarlara don */
+    cmd(0xF6);
+    read_ack();
+
+    /* Veri akisini baslat */
+    cmd(0xF4);
+    read_ack();
+
+    flush();
 
     sw = vesa_get_width();
     sh = vesa_get_height();
     mx = sw / 2;
     my = sh / 2;
     prev_left = 0;
-    inited = 1;
+    cycle = 0;
+    ready = 1;
 }
 
 void mouse_poll(mouse_state_t* state) {
-    state->click = 0;
+    state->x = mx;
+    state->y = my;
     state->left = 0;
     state->right = 0;
     state->middle = 0;
+    state->click = 0;
 
-    if (!inited) { state->x=mx; state->y=my; return; }
+    if (!ready) return;
 
-    /* Birden fazla paket varsa hepsini isleyelim */
-    int packets = 0;
-    while ((inb(0x64) & 0x21) == 0x21 && packets < 5) {
-        uint8_t flags = inb(0x60);
-        if (!(flags & 0x08)) continue; /* Senkronizasyon hatasi */
+    /* Butun bekleyen bytelari isle */
+    int max_reads = 30;
+    while (max_reads-- > 0) {
+        uint8_t st = inb(0x64);
+        if (!(st & 0x01)) break;     /* Veri yok */
+        if (!(st & 0x20)) {
+            /* Klavye verisi - atla */
+            inb(0x60);
+            continue;
+        }
 
-        mwait_r(); int8_t dx = (int8_t)inb(0x60);
-        mwait_r(); int8_t dy = (int8_t)inb(0x60);
+        uint8_t b = inb(0x60);
 
-        /* Ivme: hizli hareket = daha buyuk adim */
-        int adx = dx < 0 ? -dx : dx;
-        int ady = dy < 0 ? -dy : dy;
-        int accel = 1;
-        if (adx > 5 || ady > 5) accel = 2;
-        if (adx > 15 || ady > 15) accel = 3;
+        if (cycle == 0) {
+            /* Byte 0: flags */
+            /* Bit 3 her zaman 1 olmali (senkronizasyon) */
+            if (!(b & 0x08)) {
+                /* Senkronizasyon kaybi - bu byte'i atla */
+                continue;
+            }
+            /* Overflow bitleri set ise paketi atla */
+            if (b & 0xC0) {
+                continue;
+            }
+            pkt[0] = b;
+            cycle = 1;
+        }
+        else if (cycle == 1) {
+            pkt[1] = b;
+            cycle = 2;
+        }
+        else if (cycle == 2) {
+            pkt[2] = b;
+            cycle = 0;
 
-        mx += dx * accel;
-        my -= dy * accel;
+            /* Paketi isle */
+            int dx = (int)pkt[1];
+            int dy = (int)pkt[2];
 
-        if (mx < 0) mx = 0;
-        if (mx >= sw) mx = sw - 1;
-        if (my < 0) my = 0;
-        if (my >= sh) my = sh - 1;
+            /* Isaret genisletme (sign extension) */
+            if (pkt[0] & 0x10) dx = dx - 256;
+            if (pkt[0] & 0x20) dy = dy - 256;
 
-        state->left   = (flags & 0x01) ? 1 : 0;
-        state->right  = (flags & 0x02) ? 1 : 0;
-        state->middle = (flags & 0x04) ? 1 : 0;
+            /* Hareket uygula */
+            mx += dx;
+            my -= dy;
 
-        if (state->left && !prev_left) state->click = 1;
-        prev_left = state->left;
-        packets++;
+            /* Sinirla */
+            if (mx < 0) mx = 0;
+            if (mx >= sw) mx = sw - 1;
+            if (my < 0) my = 0;
+            if (my >= sh) my = sh - 1;
+
+            /* Buton durumu */
+            state->left   = (pkt[0] & 0x01) ? 1 : 0;
+            state->right  = (pkt[0] & 0x02) ? 1 : 0;
+            state->middle = (pkt[0] & 0x04) ? 1 : 0;
+
+            /* Click event: basildigi an */
+            if (state->left && !prev_left) {
+                state->click = 1;
+            }
+            prev_left = state->left;
+        }
     }
 
     state->x = mx;
     state->y = my;
 }
 
+/* Ok isareti cursor - siyah kenarlıklı beyaz ok */
 void mouse_draw_cursor(int cx, int cy) {
-    static const char* shape[] = {
-        "Xo..........",
-        "XXo.........",
-        "XXXo........",
-        "XXXXo.......",
-        "XXXXXo......",
-        "XXXXXXo.....",
-        "XXXXXXXo....",
-        "XXXXXXXXo...",
-        "XXXXXXXXXo..",
-        "XXXXXXooooo.",
-        "XXXoXXo.....",
-        "XXo.oXXo....",
-        "Xo...oXXo...",
-        "o.....oXXo..",
-        ".......oo...",
+    static const uint8_t cursor[15][13] = {
+        {1,0,0,0,0,0,0,0,0,0,0,0,0},
+        {1,1,0,0,0,0,0,0,0,0,0,0,0},
+        {1,2,1,0,0,0,0,0,0,0,0,0,0},
+        {1,2,2,1,0,0,0,0,0,0,0,0,0},
+        {1,2,2,2,1,0,0,0,0,0,0,0,0},
+        {1,2,2,2,2,1,0,0,0,0,0,0,0},
+        {1,2,2,2,2,2,1,0,0,0,0,0,0},
+        {1,2,2,2,2,2,2,1,0,0,0,0,0},
+        {1,2,2,2,2,2,2,2,1,0,0,0,0},
+        {1,2,2,2,2,2,1,1,1,1,0,0,0},
+        {1,2,2,1,2,2,1,0,0,0,0,0,0},
+        {1,2,1,0,1,2,2,1,0,0,0,0,0},
+        {1,1,0,0,1,2,2,1,0,0,0,0,0},
+        {1,0,0,0,0,1,2,2,1,0,0,0,0},
+        {0,0,0,0,0,1,1,1,0,0,0,0,0},
     };
-    for (int r=0;r<15;r++)
-        for (int c=0;c<13;c++) {
-            if (shape[r][c]=='X')
-                vesa_putpixel_raw(cx+c, cy+r, 0xFFFFFF);
-            else if (shape[r][c]=='o')
-                vesa_putpixel_raw(cx+c, cy+r, 0x000000);
+
+    for (int r = 0; r < 15; r++) {
+        for (int c = 0; c < 13; c++) {
+            if (cursor[r][c] == 2)
+                vesa_putpixel_raw(cx + c, cy + r, 0xFFFFFF);
+            else if (cursor[r][c] == 1)
+                vesa_putpixel_raw(cx + c, cy + r, 0x000000);
         }
+    }
 }
