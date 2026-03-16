@@ -19,5 +19,12 @@ void vga_print(const char* str);
 void vga_print_colored(const char* str, uint8_t fg, uint8_t bg);
 void vga_backspace(void);
 void vga_update_cursor(void);
+void vga_show_cursor(void);
+void vga_hide_cursor(void);
+
+void vga_putentry_at(char c, uint8_t fg, uint8_t bg, int x, int y);
+void vga_write_at(const char* str, int x, int y, uint8_t fg, uint8_t bg);
+uint16_t vga_getentry_at(int x, int y);
+void vga_setentry_at(uint16_t entry, int x, int y);
 
 #endif
