@@ -195,7 +195,7 @@ void app_file_explorer(void) {
             if (vfs[fi].is_dir)
                 draw_folder_icon(lx+8, item_y+3);
             else
-                draw_file_icon(lx+8, item_y+3, vfs[fi].name);
+                draw_file_icon(lx+8, item_y+3);
 
             vesa_draw_string(lx+26, item_y+3, vfs[fi].name, COLOR_TEXT_WHITE, row_bg);
 
