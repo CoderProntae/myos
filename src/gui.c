@@ -651,6 +651,7 @@ void gui_run(void) {
     while (1) {
         mouse_poll(&ms);
         int key = keyboard_poll();
+        net_poll();    /* Gelen ag paketlerini isle */
 
         if (key == KEY_F4 && keyboard_alt_held()) {
             if (window_open) { window_open = 0; continue; }
@@ -686,8 +687,13 @@ void gui_run(void) {
         }
 
         /* Pencere kapat */
-        if (window_open == 1 && ms.x>=150+500-24 && ms.x<150+500-8 && ms.y>=40+8 && ms.y<40+24) {
-            window_open = 0; continue;
+        if (window_open == 1) {
+            int wx = 80, wy = 10, ww = 640;
+            if (ms.x >= wx + ww - 28 && ms.x < wx + ww - 4 &&
+                ms.y >= wy + 4 && ms.y < wy + 28) {
+                window_open = 0;
+                continue;
+            }
         }
         if (window_open == 2 && ms.x>=200+400-24 && ms.x<200+400-8 && ms.y>=120+8 && ms.y<120+24) {
             window_open = 0; continue;
