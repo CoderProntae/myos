@@ -267,6 +267,143 @@ static int gt_process(void) {
         return 0;
     }
 
+    if (!k_strcmp(c, "tcptest")) {
+        net_config_t* nc4 = net_get_config();
+        if (!nc4->configured) {
+            gt_puts_c("  Ag yapilandirilmamis.\n", 4);
+            return 0;
+        }
+
+        gt_puts_c("  TCP Baglanti Testi\n", 3);
+        gt_puts_c("  ---\n", 0);
+
+        /* example.com IP'sini cozumle */
+        gt_puts_c("  DNS: example.com cozumleniyor...\n", 0);
+        gt_render();
+
+        uint8_t server_ip[4];
+        int dns_ret = dns_resolve("example.com", server_ip);
+
+        if (dns_ret != 0) {
+            /* DNS basarisiz — bilinen IP kullan */
+            gt_puts_c("  DNS basarisiz, bilinen IP kullaniliyor\n", 3);
+            server_ip[0] = 93;
+            server_ip[1] = 184;
+            server_ip[2] = 216;
+            server_ip[3] = 34;
+        }
+
+        char ips[20];
+        k_itoa(server_ip[0], ips, 10); k_strcpy(ips+k_strlen(ips), ".");
+        k_itoa(server_ip[1], ips+k_strlen(ips), 10); k_strcpy(ips+k_strlen(ips), ".");
+        k_itoa(server_ip[2], ips+k_strlen(ips), 10); k_strcpy(ips+k_strlen(ips), ".");
+        k_itoa(server_ip[3], ips+k_strlen(ips), 10);
+        gt_puts_c("  IP: ", 0);
+        gt_puts_c(ips, 1);
+        gt_putc('\n');
+        gt_render();
+
+        /* TCP baglantisi kur (port 80) */
+        gt_puts_c("  TCP: Baglaniliyor (port 80)...\n", 0);
+        gt_render();
+
+        int sock = tcp_connect(server_ip, 80);
+
+        if (sock < 0) {
+            gt_puts_c("  TCP baglanti BASARISIZ! Hata: ", 4);
+            char err[8];
+            k_itoa(sock, err, 10);
+            gt_puts_c(err, 4);
+            gt_putc('\n');
+            return 0;
+        }
+
+        gt_puts_c("  TCP baglanti BASARILI! Soket: ", 1);
+        char sid[4];
+        k_itoa(sock, sid, 10);
+        gt_puts_c(sid, 1);
+        gt_putc('\n');
+        gt_render();
+
+        /* HTTP GET gonder */
+        gt_puts_c("  HTTP GET gonderiliyor...\n", 0);
+        gt_render();
+
+        const char* request =
+            "GET / HTTP/1.0\r\n"
+            "Host: example.com\r\n"
+            "Connection: close\r\n"
+            "\r\n";
+
+        int send_len = k_strlen(request);
+        int ret = tcp_send(sock, request, (uint16_t)send_len);
+
+        if (ret < 0) {
+            gt_puts_c("  Gonderme BASARISIZ!\n", 4);
+            tcp_close(sock);
+            return 0;
+        }
+
+        gt_puts_c("  Gonderildi (", 1);
+        char sl[8];
+        k_itoa(send_len, sl, 10);
+        gt_puts_c(sl, 1);
+        gt_puts_c(" byte)\n", 1);
+        gt_render();
+
+        /* Cevap bekle */
+        gt_puts_c("  Cevap bekleniyor...\n", 0);
+        gt_render();
+
+        uint8_t response[1024];
+        int total_recv = 0;
+
+        for (int w = 0; w < 200; w++) {
+            for (volatile int d = 0; d < 300000; d++);
+            net_poll();
+
+            int rlen = tcp_recv(sock, response + total_recv,
+                                (uint16_t)(sizeof(response) - 1 - total_recv));
+            if (rlen > 0) {
+                total_recv += rlen;
+                if (total_recv >= (int)sizeof(response) - 1) break;
+            }
+
+            /* Baglanti kapandiysa dur */
+            if (!tcp_is_connected(sock) && total_recv > 0) break;
+        }
+
+        response[total_recv] = '\0';
+
+        if (total_recv > 0) {
+            gt_puts_c("  Cevap alindi! (", 1);
+            char rl[8];
+            k_itoa(total_recv, rl, 10);
+            gt_puts_c(rl, 1);
+            gt_puts_c(" byte)\n", 1);
+            gt_puts_c("  ---\n", 3);
+
+            /* Ilk 200 karakteri goster */
+            int show = total_recv > 200 ? 200 : total_recv;
+            gt_setcolor(0);
+            for (int i = 0; i < show; i++) {
+                char ch = (char)response[i];
+                if (ch == '\r') continue;
+                if (ch == '\n') { gt_putc('\n'); continue; }
+                if (ch >= 32 && ch < 127) gt_putc(ch);
+                else gt_putc('.');
+            }
+            gt_putc('\n');
+            gt_puts_c("  ---\n", 3);
+            gt_puts_c("  TCP TEST BASARILI!\n", 1);
+        } else {
+            gt_puts_c("  Cevap alinamadi (timeout)\n", 4);
+        }
+
+        tcp_close(sock);
+        return 0;
+    }
+    
     if (!k_strncmp(c, "nslookup ", 9)) {
         const char* host = c + 9;
         while (*host == ' ') host++;
