@@ -33,6 +33,27 @@ typedef struct {
     uint8_t  framebuffer_type;
 } __attribute__((packed)) multiboot_info_t;
 
+/* Gercek monitor bilgisi - donanim okunarak doldurulur */
+typedef struct {
+    char     adapter_name[32];
+    char     monitor_name[32];
+    uint32_t vram_bytes;
+    uint16_t adapter_id;
+    uint16_t hw_width;
+    uint16_t hw_height;
+    uint8_t  hw_bpp;
+    uint8_t  is_virtual;         /* VM icinde mi */
+
+    /* Desteklenen derinlikler (donanim) */
+    uint8_t  sup_depth[9];       /* 1,4,8,16,24,30,32,36,48-bit */
+    /* Desteklenen Hz (donanim) */
+    uint8_t  sup_hz[9];          /* 30,50,60,75,100,120,144,165,240 */
+    int      max_hz;
+    int      max_bpp;
+
+    int      detected;
+} monitor_info_t;
+
 #define COLOR_BG            0x1E1E2E
 #define COLOR_TASKBAR       0x2D2D44
 #define COLOR_TASKBAR_HOVER 0x3D3D5C
@@ -79,6 +100,10 @@ void     vesa_set_depth(int depth);
 int      vesa_get_depth(void);
 uint32_t vesa_preview_color(uint32_t color, int depth);
 void     vesa_putpixel_raw(int x, int y, uint32_t color);
+
+/* Monitor algilama */
+void              vesa_detect_monitor(void);
+monitor_info_t*   vesa_get_monitor_info(void);
 
 extern uint32_t* backbuffer;
 
