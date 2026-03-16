@@ -39,13 +39,14 @@ jobs:
         gcc $FLAGS src/apps.c     -o build/apps.o
         gcc $FLAGS src/browser.c  -o build/browser.o
         gcc $FLAGS src/pci.c      -o build/pci.o
+        gcc $FLAGS src/e1000.c    -o build/e1000.o
 
     - name: Link kernel
       run: |
         ld -m elf_i386 -T linker.ld -nostdlib -o build/myos.bin \
           build/boot.o build/kernel.o build/vesa.o build/vga.o build/mouse.o \
           build/keyboard.o build/string.o build/shell.o build/gui.o \
-          build/setup.o build/apps.o build/browser.o build/pci.o
+          build/setup.o build/apps.o build/browser.o build/pci.o build/e1000.o
 
     - name: Create ISO
       run: |
