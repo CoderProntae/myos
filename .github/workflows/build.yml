@@ -41,6 +41,7 @@ jobs:
         gcc $FLAGS src/pci.c      -o build/pci.o
         gcc $FLAGS src/e1000.c    -o build/e1000.o
         gcc $FLAGS src/net.c      -o build/net.o
+        gcc $FLAGS src/dns.c      -o build/dns.o
 
     - name: Link kernel
       run: |
@@ -48,7 +49,7 @@ jobs:
           build/boot.o build/kernel.o build/vesa.o build/vga.o build/mouse.o \
           build/keyboard.o build/string.o build/shell.o build/gui.o \
           build/setup.o build/apps.o build/browser.o build/pci.o \
-          build/e1000.o build/net.o
+          build/e1000.o build/net.o build/dns.o
 
     - name: Create ISO
       run: |
