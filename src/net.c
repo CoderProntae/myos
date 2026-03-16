@@ -234,16 +234,23 @@ int net_send_udp(const uint8_t dst_ip[4], uint16_t src_port,
 /* ======== UDP Al ======== */
 
 int net_recv_udp(uint16_t port, void* buffer, uint16_t max_len) {
-    for (int i=0;i<UDP_RX_SLOTS;i++) {
+    /* Herhangi bir slotta bu porta gelen veri var mi? */
+    for (int i = 0; i < UDP_RX_SLOTS; i++) {
         if (udp_rx[i].ready && udp_rx[i].port == port) {
             uint16_t len = udp_rx[i].length;
             if (len > max_len) len = max_len;
             uint8_t* d = (uint8_t*)buffer;
-            for (uint16_t j=0;j<len;j++) d[j]=udp_rx[i].data[j];
+            for (uint16_t j = 0; j < len; j++)
+                d[j] = udp_rx[i].data[j];
             udp_rx[i].ready = 0;
             return (int)len;
         }
     }
+
+    /* Port eslesmediyse, herhangi bir hazir paketi kontrol et
+       (DNS cevabi src_port=53 gelir ama dst_port=bizim local port) */
+    /* Zaten dst_port ile kaydediyoruz, problem yok */
+
     return 0;
 }
 
@@ -262,25 +269,43 @@ static void handle_udp(const uint8_t* data, uint16_t len,
                        const uint8_t src_ip[4]) {
     if (len < 8) return;
     const udp_header_t* udp = (const udp_header_t*)data;
+    uint16_t src_port = ntohs(udp->src_port);
     uint16_t dst_port = ntohs(udp->dst_port);
     uint16_t udp_len  = ntohs(udp->length);
+
+    (void)src_port;
+
     uint16_t payload_len = udp_len - 8;
     if (payload_len > len - 8) payload_len = len - 8;
+
     config.udp_rx++;
 
-    /* Bos slot bul ve kaydet */
-    for (int i=0;i<UDP_RX_SLOTS;i++) {
+    /* Bos slot bul ve kaydet — dst_port ile eslestir */
+    for (int i = 0; i < UDP_RX_SLOTS; i++) {
         if (!udp_rx[i].ready) {
             udp_rx[i].port = dst_port;
-            udp_rx[i].length = payload_len > UDP_RX_MAX ? UDP_RX_MAX : payload_len;
+            uint16_t copy_len = payload_len;
+            if (copy_len > UDP_RX_MAX) copy_len = UDP_RX_MAX;
+            udp_rx[i].length = copy_len;
             ip_copy(udp_rx[i].src_ip, src_ip);
             const uint8_t* p = data + 8;
-            for (uint16_t j=0;j<udp_rx[i].length;j++)
-                udp_rx[i].data[j]=p[j];
+            for (uint16_t j = 0; j < copy_len; j++)
+                udp_rx[i].data[j] = p[j];
             udp_rx[i].ready = 1;
-            break;
+            return;
         }
     }
+
+    /* Slot dolu — en eskisinin uzerine yaz */
+    udp_rx[0].port = dst_port;
+    uint16_t copy_len = payload_len;
+    if (copy_len > UDP_RX_MAX) copy_len = UDP_RX_MAX;
+    udp_rx[0].length = copy_len;
+    ip_copy(udp_rx[0].src_ip, src_ip);
+    const uint8_t* p = data + 8;
+    for (uint16_t j = 0; j < copy_len; j++)
+        udp_rx[0].data[j] = p[j];
+    udp_rx[0].ready = 1;
 }
 
 static void handle_icmp(const uint8_t* data, uint16_t len) {
@@ -297,16 +322,28 @@ static void handle_icmp(const uint8_t* data, uint16_t len) {
 static void handle_ip(const uint8_t* data, uint16_t len) {
     if (len < 20) return;
     const ip_header_t* ip = (const ip_header_t*)data;
+
+    /* IPv4 mi? */
+    if ((ip->ver_ihl >> 4) != 4) return;
+
     uint16_t hdr_len = (ip->ver_ihl & 0x0F) * 4;
     uint16_t total = ntohs(ip->total_length);
     if (total > len) total = len;
+    if (hdr_len > total) return;
+
     const uint8_t* payload = data + hdr_len;
     uint16_t plen = total - hdr_len;
 
     switch (ip->protocol) {
-        case IP_PROTO_ICMP: handle_icmp(payload, plen); break;
-        case IP_PROTO_UDP:  handle_udp(payload, plen, ip->src_ip); break;
-        case IP_PROTO_TCP:  break; /* Adim 4 */
+        case IP_PROTO_ICMP:
+            handle_icmp(payload, plen);
+            break;
+        case IP_PROTO_UDP:
+            handle_udp(payload, plen, ip->src_ip);
+            break;
+        case IP_PROTO_TCP:
+            /* Adim 4'te eklenecek */
+            break;
     }
 }
 
