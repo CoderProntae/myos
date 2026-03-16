@@ -1,166 +1,275 @@
 #include "gui.h"
 #include "vga.h"
 #include "mouse.h"
+#include "string.h"
 #include "io.h"
-#include <stdint.h>
+#include "shell.h"
 
-typedef struct {
-    int x, y, w, h;
-    const char* label;
-    uint8_t fg, bg;
-} button_t;
+static int start_menu_open = 0;
 
-static button_t btn_about  = {  4,  4, 14, 3, "ABOUT",     VGA_WHITE, VGA_CYAN  };
-static button_t btn_reboot = { 22,  4, 14, 3, "REBOOT",    VGA_WHITE, VGA_GREEN };
-static button_t btn_power  = { 40,  4, 18, 3, "POWER OFF", VGA_WHITE, VGA_RED   };
-static button_t btn_ok     = { 35, 16, 10, 3, "OK",        VGA_WHITE, VGA_BLUE  };
-
-static int about_open = 0;
-static int cursor_drawn = 0;
-static int cursor_draw_x = 0, cursor_draw_y = 0;
-static uint16_t cursor_saved = 0;
-
-static int str_len(const char* s) {
-    int n = 0; while (s[n]) n++; return n;
+static uint8_t bcd_to_bin(uint8_t bcd) {
+    return ((bcd >> 4) * 10) + (bcd & 0x0F);
 }
 
-static void fill_rect(int x, int y, int w, int h, uint8_t fg, uint8_t bg) {
-    for (int yy = y; yy < y + h; yy++)
-        for (int xx = x; xx < x + w; xx++)
-            vga_putentry_at(' ', fg, bg, xx, yy);
+static void draw_taskbar(void) {
+    /* Gorev cubugu - en alt satir */
+    vga_fill_row(24, VGA_WHITE, VGA_BLUE);
+
+    /* Baslat butonu */
+    if (start_menu_open)
+        vga_print_at("[Baslat]", VGA_WHITE, VGA_LIGHT_BLUE, 0, 24);
+    else
+        vga_print_at("[Baslat]", VGA_WHITE, VGA_BLUE, 0, 24);
+
+    /* Saat */
+    outb(0x70, 0x04); uint8_t h = bcd_to_bin(inb(0x71));
+    outb(0x70, 0x02); uint8_t m = bcd_to_bin(inb(0x71));
+
+    char clock[6];
+    clock[0] = '0' + h / 10; clock[1] = '0' + h % 10;
+    clock[2] = ':';
+    clock[3] = '0' + m / 10; clock[4] = '0' + m % 10;
+    clock[5] = '\0';
+    vga_print_at(clock, VGA_YELLOW, VGA_BLUE, 74, 24);
+
+    /* MyOS yazisi ortada */
+    vga_print_at("MyOS v0.2", VGA_LIGHT_CYAN, VGA_BLUE, 35, 24);
 }
 
-static void draw_frame(int x, int y, int w, int h, uint8_t fg, uint8_t bg) {
-    for (int xx = x; xx < x + w; xx++) {
-        vga_putentry_at('-', fg, bg, xx, y);
-        vga_putentry_at('-', fg, bg, xx, y + h - 1);
-    }
-    for (int yy = y; yy < y + h; yy++) {
-        vga_putentry_at('|', fg, bg, x, yy);
-        vga_putentry_at('|', fg, bg, x + w - 1, yy);
-    }
-    vga_putentry_at('+', fg, bg, x, y);
-    vga_putentry_at('+', fg, bg, x + w - 1, y);
-    vga_putentry_at('+', fg, bg, x, y + h - 1);
-    vga_putentry_at('+', fg, bg, x + w - 1, y + h - 1);
+static void draw_start_menu(void) {
+    vga_fill_rect(0, 16, 22, 23, VGA_WHITE, VGA_BLUE);
+    vga_draw_box(0, 16, 22, 23, VGA_WHITE, VGA_BLUE);
+
+    vga_print_at(" MyOS Menu       ", VGA_YELLOW, VGA_BLUE, 1, 17);
+    vga_print_at(" Terminal        ", VGA_WHITE, VGA_BLUE, 1, 18);
+    vga_print_at(" Sistem Bilgisi  ", VGA_WHITE, VGA_BLUE, 1, 19);
+    vga_print_at(" Hakkinda        ", VGA_WHITE, VGA_BLUE, 1, 20);
+    vga_print_at(" Yeniden Baslat  ", VGA_WHITE, VGA_BLUE, 1, 21);
+    vga_print_at(" Kapat           ", VGA_WHITE, VGA_BLUE, 1, 22);
 }
 
-static void draw_button(const button_t* b) {
-    fill_rect(b->x, b->y, b->w, b->h, b->fg, b->bg);
-    draw_frame(b->x, b->y, b->w, b->h, b->fg, b->bg);
-    int len = str_len(b->label);
-    int tx = b->x + (b->w - len) / 2;
-    int ty = b->y + b->h / 2;
-    vga_write_at(b->label, tx, ty, b->fg, b->bg);
-}
-
-static int inside_button(const button_t* b, int x, int y) {
-    return (x >= b->x && x < b->x + b->w && y >= b->y && y < b->y + b->h);
-}
-
-static void cursor_hide(void) {
-    if (!cursor_drawn) return;
-    vga_setentry_at(cursor_saved, cursor_draw_x, cursor_draw_y);
-    cursor_drawn = 0;
-}
-
-static void cursor_show(int x, int y) {
-    cursor_hide();
-    cursor_saved = vga_getentry_at(x, y);
-    uint8_t color = (uint8_t)(cursor_saved >> 8);
-    uint8_t ofg = color & 0x0F;
-    uint8_t obg = (color >> 4) & 0x0F;
-    char c = (char)(cursor_saved & 0xFF);
-    if (!c || c == ' ') c = ' ';
-    vga_putentry_at(c, obg, ofg, x, y);
-    cursor_draw_x = x; cursor_draw_y = y; cursor_drawn = 1;
-}
-
-static void set_status(const char* msg) {
-    fill_rect(0, 24, 80, 1, VGA_WHITE, VGA_DARK_GREY);
-    vga_write_at(msg, 2, 24, VGA_WHITE, VGA_DARK_GREY);
-}
-
-static void draw_about_window(void) {
-    fill_rect(20, 8, 40, 11, VGA_BLACK, VGA_LIGHT_GREY);
-    draw_frame(20, 8, 40, 11, VGA_BLACK, VGA_LIGHT_GREY);
-    fill_rect(21, 9, 38, 1, VGA_WHITE, VGA_BLUE);
-    vga_write_at(" About MyOS ", 23, 9, VGA_WHITE, VGA_BLUE);
-    vga_write_at("Mini OS denemesi", 24, 12, VGA_BLACK, VGA_LIGHT_GREY);
-    vga_write_at("x86 32-bit / C + ASM", 24, 13, VGA_BLACK, VGA_LIGHT_GREY);
-    vga_write_at("Mouse ile secilebilir menu", 24, 14, VGA_BLACK, VGA_LIGHT_GREY);
-    draw_button(&btn_ok);
+static void hide_start_menu(void) {
+    /* Masaustu rengiyle temizle */
+    for (int y = 16; y <= 23; y++)
+        for (int x = 0; x <= 22; x++)
+            vga_putchar_at(' ', VGA_WHITE | (VGA_CYAN << 4), x, y);
 }
 
 static void draw_desktop(void) {
-    vga_set_color(VGA_WHITE, VGA_BLUE);
-    vga_clear();
-    fill_rect(0, 0, 80, 1, VGA_WHITE, VGA_DARK_GREY);
-    vga_write_at(" MyOS Desktop ", 2, 0, VGA_WHITE, VGA_DARK_GREY);
-    vga_write_at("Kurulum Tamamlandi!", 55, 0, VGA_LIGHT_GREEN, VGA_DARK_GREY);
-    draw_button(&btn_about);
-    draw_button(&btn_reboot);
-    draw_button(&btn_power);
-    vga_write_at("Fare ile butonlara tikla.", 4, 10, VGA_WHITE, VGA_BLUE);
-    set_status("Hazir.");
-    if (about_open) draw_about_window();
+    /* Masaustu - acik mavi/cyan arka plan */
+    vga_clear_color(VGA_WHITE, VGA_CYAN);
+    vga_hide_cursor();
+
+    /* Masaustu ikonu */
+    vga_print_at("[#] Bilgisayarim", VGA_WHITE, VGA_CYAN, 2, 2);
+    vga_print_at("[>] Terminal", VGA_WHITE, VGA_CYAN, 2, 4);
+
+    /* Hos geldin mesaji */
+    vga_draw_box(22, 8, 57, 14, VGA_WHITE, VGA_BLUE);
+    vga_print_at("MyOS Masaustune", VGA_YELLOW, VGA_BLUE, 30, 9);
+    vga_print_at("Hos Geldiniz!", VGA_YELLOW, VGA_BLUE, 32, 10);
+    vga_print_at("Mouse ile tiklayin.", VGA_WHITE, VGA_BLUE, 29, 12);
+    vga_print_at("[Baslat] menuyu acin.", VGA_LIGHT_CYAN, VGA_BLUE, 28, 13);
+
+    draw_taskbar();
 }
 
-static void handle_click(int x, int y) {
-    if (about_open) {
-        if (inside_button(&btn_ok, x, y)) { about_open = 0; draw_desktop(); }
-        return;
-    }
-    if (inside_button(&btn_about, x, y)) { about_open = 1; draw_desktop(); return; }
-    if (inside_button(&btn_reboot, x, y)) {
-        outb(0x64, 0xFE);
-        for (;;) __asm__ __volatile__("cli; hlt");
-    }
-    if (inside_button(&btn_power, x, y)) {
-        set_status("Kapatiliyor...");
-        outw(0x604, 0x2000);
-        outw(0xB004, 0x2000);
-        outw(0x4004, 0x3400);
-        for (;;) __asm__ __volatile__("cli; hlt");
-    }
+static void show_sysinfo_window(void) {
+    vga_draw_box(18, 5, 61, 18, VGA_WHITE, VGA_BLUE);
+    vga_print_at(" Sistem Bilgisi ", VGA_YELLOW, VGA_BLUE, 30, 5);
+
+    char vendor[13];
+    uint32_t ebx, ecx, edx;
+    __asm__ __volatile__("cpuid" : "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0));
+    *((uint32_t*)&vendor[0]) = ebx;
+    *((uint32_t*)&vendor[4]) = edx;
+    *((uint32_t*)&vendor[8]) = ecx;
+    vendor[12] = '\0';
+
+    vga_print_at("CPU     :", VGA_WHITE, VGA_BLUE, 20, 7);
+    vga_print_at(vendor, VGA_LIGHT_GREEN, VGA_BLUE, 30, 7);
+    vga_print_at("Mimari  : i686 32-bit", VGA_WHITE, VGA_BLUE, 20, 9);
+    vga_print_at("VGA     : 80x25 text mode", VGA_WHITE, VGA_BLUE, 20, 11);
+    vga_print_at("Versiyon: MyOS v0.2", VGA_WHITE, VGA_BLUE, 20, 13);
+    vga_print_at("Klavye  : PS/2", VGA_WHITE, VGA_BLUE, 20, 15);
+
+    vga_print_at("[Kapat - tikla]", VGA_YELLOW, VGA_BLUE, 32, 17);
+}
+
+static void show_about_window(void) {
+    vga_draw_box(18, 5, 61, 16, VGA_WHITE, VGA_BLUE);
+    vga_print_at(" Hakkinda ", VGA_YELLOW, VGA_BLUE, 34, 5);
+
+    vga_print_at("  __  __        ___  ____", VGA_LIGHT_CYAN, VGA_BLUE, 24, 7);
+    vga_print_at(" |  \\/  |_   _ / _ \\/ ___|", VGA_LIGHT_CYAN, VGA_BLUE, 23, 8);
+    vga_print_at(" | |\\/| | | | | | | \\___ \\", VGA_LIGHT_BLUE, VGA_BLUE, 23, 9);
+    vga_print_at(" | |  | | |_| | |_| |___) |", VGA_LIGHT_BLUE, VGA_BLUE, 23, 10);
+    vga_print_at(" |_|  |_|\\__, |\\___/|____/", VGA_WHITE, VGA_BLUE, 23, 11);
+    vga_print_at("         |___/", VGA_WHITE, VGA_BLUE, 23, 12);
+
+    vga_print_at("MyOS v0.2 - Sifirdan OS", VGA_WHITE, VGA_BLUE, 26, 14);
+    vga_print_at("[Kapat - tikla]", VGA_YELLOW, VGA_BLUE, 32, 15);
 }
 
 void gui_run(void) {
     mouse_state_t ms;
-    int last_left = 0;
-
-    about_open = 0;
-    vga_hide_cursor();
+    int old_col = -1, old_row = -1;
+    uint16_t old_entry = 0;
+    int window_open = 0;   /* 0=yok, 1=sysinfo, 2=about */
+    int click_cooldown = 0;
 
     draw_desktop();
-    mouse_get_state(&ms);
-    cursor_show(ms.x, ms.y);
 
-    for (;;) {
-        if (mouse_poll(&ms)) {
-            cursor_hide();
+    while (1) {
+        mouse_poll(&ms);
 
-            if (about_open) {
-                if (inside_button(&btn_ok, ms.x, ms.y))
-                    set_status("Pencereyi kapat.");
-                else
-                    set_status("About penceresi acik.");
-            } else {
-                if (inside_button(&btn_about, ms.x, ms.y))
-                    set_status("Hakkinda penceresini ac.");
-                else if (inside_button(&btn_reboot, ms.x, ms.y))
-                    set_status("Sistemi yeniden baslat.");
-                else if (inside_button(&btn_power, ms.x, ms.y))
-                    set_status("Sistemi kapat.");
-                else
-                    set_status("Fare ile buton sec.");
+        int mc = ms.col;
+        int mr = ms.row;
+        if (mc >= 80) mc = 79;
+        if (mr >= 25) mr = 24;
+
+        if (click_cooldown > 0) click_cooldown--;
+
+        /* Eski cursor geri yukle */
+        if (old_col >= 0 && old_row >= 0 && (old_col != mc || old_row != mr)) {
+            vga_set_entry(old_col, old_row, old_entry);
+        }
+
+        if (mc != old_col || mr != old_row) {
+            old_entry = vga_get_entry(mc, mr);
+            old_col = mc;
+            old_row = mr;
+        }
+
+        /* Mouse cursor */
+        vga_putchar_at('>', VGA_WHITE | (VGA_RED << 4), mc, mr);
+
+        /* Hover: Baslat butonu */
+        if (mc >= 0 && mc <= 7 && mr == 24) {
+            vga_print_at("[Baslat]", VGA_YELLOW, VGA_LIGHT_BLUE, 0, 24);
+        } else {
+            if (start_menu_open)
+                vga_print_at("[Baslat]", VGA_WHITE, VGA_LIGHT_BLUE, 0, 24);
+            else
+                vga_print_at("[Baslat]", VGA_WHITE, VGA_BLUE, 0, 24);
+        }
+
+        /* Hover: Start menu items */
+        if (start_menu_open) {
+            for (int i = 18; i <= 22; i++) {
+                if (mr == i && mc >= 1 && mc <= 21) {
+                    vga_fill_rect(1, i, 21, i, VGA_WHITE, VGA_LIGHT_BLUE);
+                    const char* items[] = {" Terminal        "," Sistem Bilgisi  "," Hakkinda        "," Yeniden Baslat  "," Kapat           "};
+                    vga_print_at(items[i-18], VGA_WHITE, VGA_LIGHT_BLUE, 1, i);
+                } else {
+                    const char* items[] = {" Terminal        "," Sistem Bilgisi  "," Hakkinda        "," Yeniden Baslat  "," Kapat           "};
+                    vga_print_at(items[i-18], VGA_WHITE, VGA_BLUE, 1, i);
+                }
+            }
+        }
+
+        /* Tiklama */
+        if (ms.left && click_cooldown == 0) {
+            click_cooldown = 10000;
+
+            /* Pencere aciksa, tikla kapat */
+            if (window_open) {
+                window_open = 0;
+                start_menu_open = 0;
+                draw_desktop();
+                old_col = -1; old_row = -1;
+                continue;
             }
 
-            if (ms.left && !last_left)
-                handle_click(ms.x, ms.y);
+            /* Baslat butonu */
+            if (mc >= 0 && mc <= 7 && mr == 24) {
+                start_menu_open = !start_menu_open;
+                if (start_menu_open)
+                    draw_start_menu();
+                else
+                    hide_start_menu();
+                old_col = -1; old_row = -1;
+                continue;
+            }
 
-            cursor_show(ms.x, ms.y);
-            last_left = ms.left;
+            /* Menu: Terminal */
+            if (start_menu_open && mr == 18 && mc >= 1 && mc <= 21) {
+                start_menu_open = 0;
+                vga_clear();
+                vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
+                vga_print("MyOS Terminal - 'exit' ile masaustune don\n\n");
+                shell_run();
+                draw_desktop();
+                old_col = -1; old_row = -1;
+                continue;
+            }
+
+            /* Menu: Sistem Bilgisi */
+            if (start_menu_open && mr == 19 && mc >= 1 && mc <= 21) {
+                start_menu_open = 0;
+                draw_desktop();
+                show_sysinfo_window();
+                window_open = 1;
+                old_col = -1; old_row = -1;
+                continue;
+            }
+
+            /* Menu: Hakkinda */
+            if (start_menu_open && mr == 20 && mc >= 1 && mc <= 21) {
+                start_menu_open = 0;
+                draw_desktop();
+                show_about_window();
+                window_open = 2;
+                old_col = -1; old_row = -1;
+                continue;
+            }
+
+            /* Menu: Yeniden Baslat */
+            if (start_menu_open && mr == 21 && mc >= 1 && mc <= 21) {
+                outb(0x64, 0xFE);
+                continue;
+            }
+
+            /* Menu: Kapat */
+            if (start_menu_open && mr == 22 && mc >= 1 && mc <= 21) {
+                vga_clear_color(VGA_WHITE, VGA_BLACK);
+                vga_print_at("Sistem kapatiliyor...", VGA_WHITE, VGA_BLACK, 28, 12);
+                outb(0x604, 0x2000);
+                outb(0xB004, 0x2000);
+                outb(0x4004, 0x3400);
+                __asm__ __volatile__("cli; hlt");
+                continue;
+            }
+
+            /* Masaustu ikon: Bilgisayarim */
+            if (mc >= 2 && mc <= 17 && mr == 2) {
+                draw_desktop();
+                show_sysinfo_window();
+                window_open = 1;
+                old_col = -1; old_row = -1;
+                continue;
+            }
+
+            /* Masaustu ikon: Terminal */
+            if (mc >= 2 && mc <= 13 && mr == 4) {
+                vga_clear();
+                vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
+                vga_print("MyOS Terminal - 'exit' ile masaustune don\n\n");
+                shell_run();
+                draw_desktop();
+                old_col = -1; old_row = -1;
+                continue;
+            }
+
+            /* Bos yere tiklayinca menuyu kapat */
+            if (start_menu_open) {
+                start_menu_open = 0;
+                hide_start_menu();
+                old_col = -1; old_row = -1;
+            }
         }
+
+        /* Saati guncelle */
+        draw_taskbar();
     }
 }
