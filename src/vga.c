@@ -5,16 +5,37 @@
 #define VGA_HEIGHT 25
 #define VGA_MEMORY 0xB8000
 
-static uint16_t* vga_buffer;
-static int cursor_x, cursor_y;
-static uint8_t current_color;
+static uint16_t* vga_buffer = (uint16_t*)VGA_MEMORY;
+static int cursor_x = 0, cursor_y = 0;
+static uint8_t current_color = 0x07;
 
 static uint8_t make_color(uint8_t fg, uint8_t bg) {
     return fg | (bg << 4);
 }
 
 static uint16_t make_entry(char c, uint8_t color) {
-    return (uint16_t)c | ((uint16_t)color << 8);
+    return (uint16_t)(uint8_t)c | ((uint16_t)color << 8);
+}
+
+void vga_update_cursor(void) {
+    uint16_t pos = (uint16_t)(cursor_y * VGA_WIDTH + cursor_x);
+    outb(0x3D4, 14);
+    outb(0x3D5, (uint8_t)(pos >> 8));
+    outb(0x3D4, 15);
+    outb(0x3D5, (uint8_t)(pos & 0xFF));
+}
+
+void vga_hide_cursor(void) {
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, 0x20);
+}
+
+void vga_show_cursor(void) {
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, (inb(0x3D5) & 0xC0) | 14);
+    outb(0x3D4, 0x0B);
+    outb(0x3D5, (inb(0x3D5) & 0xE0) | 15);
+    vga_update_cursor();
 }
 
 void vga_init(void) {
@@ -79,8 +100,22 @@ void vga_backspace(void) {
     vga_update_cursor();
 }
 
-void vga_update_cursor(void) {
-    uint16_t pos = cursor_y * VGA_WIDTH + cursor_x;
-    outb(0x3D4, 14); outb(0x3D5, (pos >> 8) & 0xFF);
-    outb(0x3D4, 15); outb(0x3D5, pos & 0xFF);
+void vga_putentry_at(char c, uint8_t fg, uint8_t bg, int x, int y) {
+    if (x < 0 || x >= VGA_WIDTH || y < 0 || y >= VGA_HEIGHT) return;
+    vga_buffer[y * VGA_WIDTH + x] = make_entry(c, make_color(fg, bg));
+}
+
+void vga_write_at(const char* str, int x, int y, uint8_t fg, uint8_t bg) {
+    while (*str && x < VGA_WIDTH)
+        vga_putentry_at(*str++, fg, bg, x++, y);
+}
+
+uint16_t vga_getentry_at(int x, int y) {
+    if (x < 0 || x >= VGA_WIDTH || y < 0 || y >= VGA_HEIGHT) return 0;
+    return vga_buffer[y * VGA_WIDTH + x];
+}
+
+void vga_setentry_at(uint16_t entry, int x, int y) {
+    if (x < 0 || x >= VGA_WIDTH || y < 0 || y >= VGA_HEIGHT) return;
+    vga_buffer[y * VGA_WIDTH + x] = entry;
 }
