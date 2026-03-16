@@ -21,14 +21,19 @@ static int ctrl_held = 0;
 int keyboard_alt_held(void)  { return alt_held; }
 int keyboard_ctrl_held(void) { return ctrl_held; }
 
-static char decode_scancode(uint8_t sc) {
+static int decode_scancode(uint8_t sc) {
+    /* Modifier tuslar */
     if (sc == 0x2A || sc == 0x36) { shift_held = 1; return 0; }
     if (sc == 0xAA || sc == 0xB6) { shift_held = 0; return 0; }
     if (sc == 0x38) { alt_held = 1; return 0; }
     if (sc == 0xB8) { alt_held = 0; return 0; }
     if (sc == 0x1D) { ctrl_held = 1; return 0; }
     if (sc == 0x9D) { ctrl_held = 0; return 0; }
+
+    /* Tus birakma */
     if (sc & 0x80) return 0;
+
+    /* Ozel tuslar */
     if (sc == 0x01) return KEY_ESC;
     if (sc >= 0x3B && sc <= 0x44) return KEY_F1 + (sc - 0x3B);
     if (sc == 0x57) return KEY_F11;
@@ -37,26 +42,26 @@ static char decode_scancode(uint8_t sc) {
     if (sc == 0x50) return KEY_DOWN;
     if (sc == 0x4B) return KEY_LEFT;
     if (sc == 0x4D) return KEY_RIGHT;
+
+    /* Normal tuslar */
     if (sc < sizeof(scancode_ascii)) {
         char c = shift_held ? scancode_shift[sc] : scancode_ascii[sc];
-        return c;
+        if (c) return (int)c;
     }
     return 0;
 }
 
-/* Bloklamayan: veri yoksa 0 doner */
-char keyboard_poll(void) {
+int keyboard_poll(void) {
     uint8_t status = inb(0x64);
     if (!(status & 1)) return 0;
-    if (status & 0x20) { inb(0x60); return 0; } /* mouse verisi */
+    if (status & 0x20) { inb(0x60); return 0; }
     uint8_t sc = inb(0x60);
     return decode_scancode(sc);
 }
 
-/* Bloklayan: tusa basilana kadar bekler */
-char keyboard_getchar(void) {
+int keyboard_getchar(void) {
     while (1) {
-        char c = keyboard_poll();
+        int c = keyboard_poll();
         if (c) return c;
     }
 }
