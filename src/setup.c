@@ -163,6 +163,7 @@ int setup_run(void) {
 
         /* Tiklama */
         if (ms.click && hover1) {
+            mouse_clear_click();
             disk_check_screen();
             install_screen();
             return 1;
