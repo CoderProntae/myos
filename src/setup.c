@@ -14,7 +14,6 @@ static void draw_progress(int x, int y, int w, int percent, uint32_t fg) {
     if (filled > 0)
         vesa_fill_rect(x, y, filled, 20, fg);
     vesa_draw_rect_outline(x, y, w, 20, COLOR_WINDOW_BORDER);
-
     char pstr[5];
     k_itoa(percent, pstr, 10);
     char buf[8];
@@ -25,74 +24,62 @@ static void draw_progress(int x, int y, int w, int percent, uint32_t fg) {
 }
 
 static void disk_check_screen(void) {
-    vesa_fill_screen(COLOR_BG);
-
-    /* Pencere */
     int wx=150, wy=80, ww=500, wh=400;
+    int cy;
+    const char* ok_msgs[] = {
+        "[1/4] Disk algilandi           ",
+        "[2/4] Sektorler saglam         ",
+        "[3/4] Dosya sistemi hazir      ",
+        "[4/4] Yeterli alan mevcut      "
+    };
+    const char* run_msgs[] = {
+        "[1/4] Disk algilaniyor...      ",
+        "[2/4] Sektorler okunuyor...    ",
+        "[3/4] Dosya sistemi kontrol... ",
+        "[4/4] Alan hesaplaniyor...     "
+    };
+    uint32_t colors[] = {COLOR_ACCENT, 0x0099DD, 0x44AA44, 0xCC8800};
+    int speeds[] = {4, 3, 5, 6};
+
+    for (int step = 0; step < 4; step++) {
+        for (int p = 0; p <= 100; p += speeds[step]) {
+            vesa_fill_screen(COLOR_BG);
+            vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
+            vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
+            vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
+            vesa_draw_string(wx+16, wy+8, "Disk Denetleme", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
+            vesa_draw_string(wx+20, wy+50, "Disk 0: ATA/SATA", COLOR_TEXT_CYAN, COLOR_WINDOW_BG);
+
+            cy = wy + 80;
+            for (int prev = 0; prev < step; prev++) {
+                vesa_draw_string(wx+20, cy, ok_msgs[prev], COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
+                cy += 40;
+            }
+            vesa_draw_string(wx+20, cy, run_msgs[step], COLOR_TEXT_WHITE, COLOR_WINDOW_BG);
+            draw_progress(wx+20, cy+20, ww-40, p, colors[step]);
+
+            vesa_copy_buffer();
+            delay(1);
+        }
+    }
+    /* Hepsi tamamlandi */
+    vesa_fill_screen(COLOR_BG);
     vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
     vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
     vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
     vesa_draw_string(wx+16, wy+8, "Disk Denetleme", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
-
-    int cy = wy + 50;
-
-    /* Adim 1 */
-    vesa_draw_string(wx+20, cy, "[1/4] Disk algilaniyor...", COLOR_TEXT_CYAN, COLOR_WINDOW_BG);
-    cy += 20;
-    for (int p = 0; p <= 100; p += 4) {
-        draw_progress(wx+20, cy, ww-40, p, COLOR_ACCENT);
-        vesa_copy_buffer();
-        delay(1);
+    cy = wy + 80;
+    for (int i = 0; i < 4; i++) {
+        vesa_draw_string(wx+20, cy, ok_msgs[i], COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
+        cy += 40;
     }
-    vesa_draw_string(wx+20, cy-20, "[1/4] Disk algilandi      ", COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
-    cy += 35;
-
-    /* Adim 2 */
-    vesa_draw_string(wx+20, cy, "[2/4] Sektorler okunuyor...", COLOR_TEXT_CYAN, COLOR_WINDOW_BG);
-    cy += 20;
-    for (int p = 0; p <= 100; p += 3) {
-        draw_progress(wx+20, cy, ww-40, p, 0x0099DD);
-        vesa_copy_buffer();
-        delay(1);
-    }
-    vesa_draw_string(wx+20, cy-20, "[2/4] Sektorler saglam     ", COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
-    cy += 35;
-
-    /* Adim 3 */
-    vesa_draw_string(wx+20, cy, "[3/4] Dosya sistemi kontrol", COLOR_TEXT_CYAN, COLOR_WINDOW_BG);
-    cy += 20;
-    for (int p = 0; p <= 100; p += 5) {
-        draw_progress(wx+20, cy, ww-40, p, 0x44AA44);
-        vesa_copy_buffer();
-        delay(1);
-    }
-    vesa_draw_string(wx+20, cy-20, "[3/4] Dosya sistemi hazir  ", COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
-    cy += 35;
-
-    /* Adim 4 */
-    vesa_draw_string(wx+20, cy, "[4/4] Alan hesaplaniyor...", COLOR_TEXT_CYAN, COLOR_WINDOW_BG);
-    cy += 20;
-    for (int p = 0; p <= 100; p += 6) {
-        draw_progress(wx+20, cy, ww-40, p, 0xCC8800);
-        vesa_copy_buffer();
-        delay(1);
-    }
-    vesa_draw_string(wx+20, cy-20, "[4/4] Yeterli alan mevcut ", COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
-
-    vesa_draw_string(wx+120, wy+wh-40, "Disk denetleme tamamlandi!", COLOR_TEXT_YELLOW, COLOR_WINDOW_BG);
+    vesa_draw_string(wx+100, wy+wh-50, "Disk denetleme tamamlandi!", COLOR_TEXT_YELLOW, COLOR_WINDOW_BG);
     vesa_copy_buffer();
     delay(20);
 }
 
 static void install_screen(void) {
-    vesa_fill_screen(COLOR_BG);
-
     int wx=150, wy=100, ww=500, wh=350;
-    vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
-    vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
-    vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
-    vesa_draw_string(wx+16, wy+8, "MyOS Kurulum", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
-
     const char* steps[] = {
         "Cekirdek kopyalaniyor...",
         "Sistem dosyalari ayarlaniyor...",
@@ -101,70 +88,81 @@ static void install_screen(void) {
         "Yapilandirma tamamlaniyor...",
     };
 
-    int cy = wy + 50;
     for (int s = 0; s < 5; s++) {
-        vesa_draw_string(wx+20, cy, steps[s], COLOR_TEXT_WHITE, COLOR_WINDOW_BG);
-        cy += 20;
         for (int p = 0; p <= 100; p += 3) {
-            draw_progress(wx+20, cy, ww-40, p, COLOR_ACCENT);
+            vesa_fill_screen(COLOR_BG);
+            vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
+            vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
+            vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
+            vesa_draw_string(wx+16, wy+8, "MyOS Kurulum", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
+
+            int cy = wy + 50;
+            for (int prev = 0; prev < s; prev++) {
+                vesa_draw_string(wx+20, cy, steps[prev], COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
+                cy += 30;
+            }
+            vesa_draw_string(wx+20, cy, steps[s], COLOR_TEXT_WHITE, COLOR_WINDOW_BG);
+            draw_progress(wx+20, cy+20, ww-40, p, COLOR_ACCENT);
+
             vesa_copy_buffer();
             delay(1);
         }
-        /* Tamamlandi */
-        vesa_fill_rect(wx+20, cy-20, ww-40, 16, COLOR_WINDOW_BG);
-        vesa_draw_string(wx+20, cy-20, steps[s], COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
-        cy += 30;
     }
 
-    vesa_draw_string(wx+100, wy+wh-40, "Kurulum tamamlandi! Baslatiliyor...", COLOR_TEXT_YELLOW, COLOR_WINDOW_BG);
+    vesa_fill_screen(COLOR_BG);
+    vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
+    vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
+    vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
+    vesa_draw_string(wx+16, wy+8, "MyOS Kurulum", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
+    int cy2 = wy+50;
+    for (int i = 0; i < 5; i++) {
+        vesa_draw_string(wx+20, cy2, "[OK]", COLOR_TEXT_GREEN, COLOR_WINDOW_BG);
+        cy2 += 30;
+    }
+    vesa_draw_string(wx+80, wy+wh-50, "Kurulum tamamlandi! Baslatiliyor...", COLOR_TEXT_YELLOW, COLOR_WINDOW_BG);
     vesa_copy_buffer();
     delay(25);
 }
 
 int setup_run(void) {
     mouse_state_t ms;
-
-    /* Hos geldin ekrani */
-    vesa_fill_screen(COLOR_BG);
-
     int wx=200, wy=120, ww=400, wh=300;
-    vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
-    vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
-    vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
-
-    /* Logo */
-    draw_windows_logo(wx+ww/2 - 8, wy+50, COLOR_ACCENT);
-    vesa_draw_string(wx+ww/2 - 48, wy+80, "MyOS Setup", COLOR_TEXT_WHITE, COLOR_WINDOW_BG);
-    vesa_draw_string(wx+ww/2 - 80, wy+110, "Kurulum tipini secin:", COLOR_TEXT_GREY, COLOR_WINDOW_BG);
-
-    /* Buton: Grafik Kurulum */
     int bx=wx+80, by=wy+160, bw=240, bh=40;
-    vesa_draw_rounded_rect(bx, by, bw, bh, COLOR_ACCENT, 4);
-    vesa_draw_string(bx+48, by+12, "Grafik Kurulum", COLOR_TEXT_WHITE, COLOR_ACCENT);
-
-    /* Buton: Diger */
-    int bx2=wx+80, by2=wy+220, bw2=240, bh2=40;
-    vesa_draw_rounded_rect(bx2, by2, bw2, bh2, COLOR_BUTTON, 4);
-    vesa_draw_string(bx2+48, by2+12, "Diger (yakinda)", COLOR_TEXT_GREY, COLOR_BUTTON);
-
-    vesa_copy_buffer();
+    int bx2=wx+80, by2=wy+220;
 
     while (1) {
         mouse_poll(&ms);
+        int hover1 = (ms.x>=bx && ms.x<bx+bw && ms.y>=by && ms.y<by+bh);
 
-        int hovering_install = (ms.x >= bx && ms.x < bx+bw && ms.y >= by && ms.y < by+bh);
+        /* --- Her frame yeniden ciz --- */
+        vesa_fill_screen(COLOR_BG);
 
-        if (hovering_install)
-            vesa_draw_rounded_rect(bx, by, bw, bh, COLOR_START_HOVER, 4);
-        else
-            vesa_draw_rounded_rect(bx, by, bw, bh, COLOR_ACCENT, 4);
-        vesa_draw_string(bx+48, by+12, "Grafik Kurulum", COLOR_TEXT_WHITE,
-                         hovering_install ? COLOR_START_HOVER : COLOR_ACCENT);
+        /* Pencere */
+        vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
+        vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
+        vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
 
+        /* Logo */
+        draw_windows_logo(wx+ww/2-8, wy+50, COLOR_ACCENT);
+        vesa_draw_string(wx+ww/2-48, wy+80, "MyOS Setup", COLOR_TEXT_WHITE, COLOR_WINDOW_BG);
+        vesa_draw_string(wx+ww/2-80, wy+110, "Kurulum tipini secin:", COLOR_TEXT_GREY, COLOR_WINDOW_BG);
+
+        /* Buton 1 */
+        uint32_t b1c = hover1 ? COLOR_START_HOVER : COLOR_ACCENT;
+        vesa_draw_rounded_rect(bx, by, bw, bh, b1c, 4);
+        vesa_draw_string(bx+48, by+12, "Grafik Kurulum", COLOR_TEXT_WHITE, b1c);
+
+        /* Buton 2 (devre disi) */
+        vesa_draw_rounded_rect(bx2, by2, bw, bh, COLOR_BUTTON, 4);
+        vesa_draw_string(bx2+48, by2+12, "Diger (yakinda)", COLOR_TEXT_GREY, COLOR_BUTTON);
+
+        /* Mouse cursor */
         mouse_draw_cursor(ms.x, ms.y);
+
         vesa_copy_buffer();
 
-        if (ms.click && hovering_install) {
+        /* Tiklama */
+        if (ms.click && hover1) {
             disk_check_screen();
             install_screen();
             return 1;
