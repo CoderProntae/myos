@@ -11,7 +11,6 @@ static uint32_t  screen_bpp;
 static uint32_t  backbuf_data[800 * 600];
 uint32_t* backbuffer = backbuf_data;
 
-/* Aktif renk derinligi (varsayilan 32) */
 static int current_depth = 32;
 
 void vesa_init(multiboot_info_t* mbi) {
@@ -25,51 +24,68 @@ void vesa_init(multiboot_info_t* mbi) {
     if (screen_bpp == 0)    screen_bpp    = 32;
 }
 
-int vesa_get_width(void)  { return (int)screen_width; }
-int vesa_get_height(void) { return (int)screen_height; }
-int vesa_get_bpp(void)    { return (int)screen_bpp; }
+int  vesa_get_width(void)  { return (int)screen_width; }
+int  vesa_get_height(void) { return (int)screen_height; }
+int  vesa_get_bpp(void)    { return (int)screen_bpp; }
+void vesa_set_depth(int d) { current_depth = d; }
+int  vesa_get_depth(void)  { return current_depth; }
 
-void vesa_set_depth(int depth) { current_depth = depth; }
-int  vesa_get_depth(void)      { return current_depth; }
+/* ====== Sik renk derinligi donusumu ====== */
+static uint32_t reduce_color(uint32_t color, int depth) {
+    if (depth >= 24) return color;
 
-/* ====== Renk derinligi simulasyonu ====== */
-static uint32_t apply_depth(uint32_t color) {
-    if (current_depth >= 24) return color;
+    int r = (color >> 16) & 0xFF;
+    int g = (color >> 8)  & 0xFF;
+    int b =  color        & 0xFF;
 
-    uint8_t r = (color >> 16) & 0xFF;
-    uint8_t g = (color >> 8)  & 0xFF;
-    uint8_t b =  color        & 0xFF;
-
-    switch (current_depth) {
+    switch (depth) {
         case 1: {
-            /* 2 renk: Siyah veya Beyaz */
-            uint8_t lum = (uint8_t)((r * 30 + g * 59 + b * 11) / 100);
-            return lum > 127 ? 0xFFFFFF : 0x000000;
+            /* Zarif monokrom - koyu lacivert / acik gumus */
+            int lum = (r * 30 + g * 59 + b * 11) / 100;
+            return lum > 105 ? 0xB8C4D0 : 0x0D1520;
         }
         case 4: {
-            /* ~16 renk: her kanal 4 seviye */
-            static const uint8_t lv[4] = {0, 85, 170, 255};
-            r = lv[r >> 6];
-            g = lv[g >> 6];
-            b = lv[b >> 6];
+            /* 16 ton - 4 seviye/kanal, yuvarlama ile */
+            r = ((r * 3 + 127) / 255) * 85;
+            g = ((g * 3 + 127) / 255) * 85;
+            b = ((b * 3 + 127) / 255) * 85;
             break;
         }
         case 8: {
-            /* 256 renk: 3-3-2 bit RGB */
-            r = (r >> 5) << 5;
-            g = (g >> 5) << 5;
-            b = (b >> 6) << 6;
+            /* 256 renk - 8R x 8G x 4B, iyi yuvarlama */
+            r = ((r * 7 + 127) / 255) * (255 / 7);
+            g = ((g * 7 + 127) / 255) * (255 / 7);
+            b = ((b * 3 + 127) / 255) * 85;
             break;
         }
         case 16: {
-            /* 65536 renk: 5-6-5 bit RGB */
-            r = (r >> 3) << 3;
-            g = (g >> 2) << 2;
-            b = (b >> 3) << 3;
+            /* 65K renk - 5-6-5 RGB */
+            r = ((r * 31 + 127) / 255) * (255 / 31);
+            g = ((g * 63 + 127) / 255) * (255 / 63);
+            b = ((b * 31 + 127) / 255) * (255 / 31);
             break;
         }
     }
+
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
+
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
+static uint32_t apply_depth(uint32_t color) {
+    return reduce_color(color, current_depth);
+}
+
+uint32_t vesa_preview_color(uint32_t color, int depth) {
+    return reduce_color(color, depth);
+}
+
+/* Depth uygulamadan dogrudan pixel koy */
+void vesa_putpixel_raw(int x, int y, uint32_t color) {
+    if (x >= 0 && x < (int)screen_width && y >= 0 && y < (int)screen_height)
+        backbuffer[y * screen_width + x] = color;
 }
 
 void vesa_putpixel(int x, int y, uint32_t color) {
@@ -165,16 +181,14 @@ void vesa_draw_rounded_rect(int x, int y, int w, int h, uint32_t color, int r) {
     vesa_fill_rect(x + r, y, w - 2*r, h, color);
     vesa_fill_rect(x, y + r, r, h - 2*r, color);
     vesa_fill_rect(x + w - r, y + r, r, h - 2*r, color);
-    for (int cy2 = 0; cy2 < r; cy2++) {
-        for (int cx = 0; cx < r; cx++) {
+    for (int cy2 = 0; cy2 < r; cy2++)
+        for (int cx = 0; cx < r; cx++)
             if (cx*cx + cy2*cy2 <= r*r) {
                 vesa_putpixel(x+r-cx,     y+r-cy2,     color);
                 vesa_putpixel(x+w-r+cx-1, y+r-cy2,     color);
                 vesa_putpixel(x+r-cx,     y+h-r+cy2-1, color);
                 vesa_putpixel(x+w-r+cx-1, y+h-r+cy2-1, color);
             }
-        }
-    }
 }
 
 void vesa_copy_buffer(void) {
