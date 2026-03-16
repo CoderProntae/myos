@@ -297,50 +297,111 @@ static void draw_start_menu(int mx2, int my2) {
 
 static void show_sysinfo(void) {
     monitor_info_t* mi = vesa_get_monitor_info();
-    int wx = 150, wy = 40, ww = 500, wh = 460;
+    int wx = 100, wy = 20, ww = 600, wh = 540;
     vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
     vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
     vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
     vesa_draw_string(wx + 16, wy + 8, "Sistem Bilgisi", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
     draw_close_button(wx + ww - 24, wy + 8, COLOR_CLOSE_BTN);
+
     char v[13]; uint32_t eb, ec, ed;
     __asm__ __volatile__("cpuid":"=b"(eb),"=c"(ec),"=d"(ed):"a"(0));
     *((uint32_t*)&v[0])=eb; *((uint32_t*)&v[4])=ed;
     *((uint32_t*)&v[8])=ec; v[12]=0;
-    int cy = wy + 48;
-    vesa_draw_string(wx+20,cy,"CPU:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,v,COLOR_TEXT_GREEN,COLOR_WINDOW_BG); cy+=22;
-    vesa_draw_string(wx+20,cy,"Adaptor:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,mi->adapter_name,COLOR_TEXT_WHITE,COLOR_WINDOW_BG); cy+=22;
-    vesa_draw_string(wx+20,cy,"Monitor:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,mi->monitor_name,COLOR_TEXT_WHITE,COLOR_WINDOW_BG); cy+=22;
-    vesa_draw_string(wx+20,cy,"Ortam:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,mi->is_virtual?"Sanal Makine":"Fiziksel",
-        mi->is_virtual?COLOR_TEXT_YELLOW:COLOR_TEXT_GREEN,COLOR_WINDOW_BG); cy+=22;
+
+    int cy = wy + 44;
+    vesa_draw_string(wx+15,cy,"CPU:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+120,cy,v,COLOR_TEXT_GREEN,COLOR_WINDOW_BG); cy+=18;
+    vesa_draw_string(wx+15,cy,"Adaptor:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+120,cy,mi->adapter_name,COLOR_TEXT_WHITE,COLOR_WINDOW_BG); cy+=18;
+    vesa_draw_string(wx+15,cy,"Monitor:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+120,cy,mi->monitor_name,COLOR_TEXT_WHITE,COLOR_WINDOW_BG); cy+=18;
+    vesa_draw_string(wx+15,cy,"Ortam:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+120,cy,mi->is_virtual?"Sanal Makine":"Fiziksel",
+        mi->is_virtual?COLOR_TEXT_YELLOW:COLOR_TEXT_GREEN,COLOR_WINDOW_BG); cy+=18;
     char vb[12]; k_itoa((int)(mi->vram_bytes/1024/1024),vb,10);
     int vl=k_strlen(vb); vb[vl]=' '; vb[vl+1]='M'; vb[vl+2]='B'; vb[vl+3]=0;
-    vesa_draw_string(wx+20,cy,"VRAM:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,vb,COLOR_TEXT_CYAN,COLOR_WINDOW_BG); cy+=22;
+    vesa_draw_string(wx+15,cy,"VRAM:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+120,cy,vb,COLOR_TEXT_CYAN,COLOR_WINDOW_BG); cy+=18;
+
     char rs[20]; k_itoa(vesa_get_width(),rs,10);
     int rl=k_strlen(rs); rs[rl]='x'; k_itoa(vesa_get_height(),rs+rl+1,10);
-    vesa_draw_string(wx+20,cy,"Cozunurluk:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,rs,COLOR_TEXT_WHITE,COLOR_WINDOW_BG); cy+=22;
+    vesa_draw_string(wx+15,cy,"Cozunurluk:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+120,cy,rs,COLOR_TEXT_WHITE,COLOR_WINDOW_BG); cy+=18;
+
     char db[10]; k_itoa(vesa_get_depth(),db,10);
     int dl=k_strlen(db); db[dl]='-'; db[dl+1]='b'; db[dl+2]='i'; db[dl+3]='t'; db[dl+4]=0;
-    vesa_draw_string(wx+20,cy,"Renk:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,db,COLOR_TEXT_CYAN,COLOR_WINDOW_BG); cy+=22;
+    vesa_draw_string(wx+15,cy,"Renk:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+120,cy,db,COLOR_TEXT_CYAN,COLOR_WINDOW_BG); cy+=18;
+
     char hb[10]; k_itoa(current_hz,hb,10);
     int hl=k_strlen(hb); hb[hl]=' '; hb[hl+1]='H'; hb[hl+2]='z'; hb[hl+3]=0;
-    vesa_draw_string(wx+20,cy,"Hz:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,hb,COLOR_TEXT_YELLOW,COLOR_WINDOW_BG); cy+=22;
-    char mhz[10]; k_itoa(mi->max_hz,mhz,10);
-    int ml=k_strlen(mhz); mhz[ml]=' '; mhz[ml+1]='H'; mhz[ml+2]='z'; mhz[ml+3]=0;
-    vesa_draw_string(wx+20,cy,"Max Hz:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,mhz,COLOR_TEXT_GREEN,COLOR_WINDOW_BG); cy+=22;
-    char mb[10]; k_itoa(mi->max_bpp,mb,10);
-    int mbl=k_strlen(mb); mb[mbl]='-'; mb[mbl+1]='b'; mb[mbl+2]='i'; mb[mbl+3]='t'; mb[mbl+4]=0;
-    vesa_draw_string(wx+20,cy,"Max BPP:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
-    vesa_draw_string(wx+130,cy,mb,COLOR_TEXT_GREEN,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+15,cy,"Hz:",COLOR_TEXT_GREY,COLOR_WINDOW_BG);
+    vesa_draw_string(wx+120,cy,hb,COLOR_TEXT_YELLOW,COLOR_WINDOW_BG); cy+=22;
+
+    /* PCI Cihaz Listesi */
+    vesa_fill_rect(wx+10, cy, ww-20, 1, COLOR_WINDOW_BORDER); cy+=6;
+    vesa_draw_string(wx+15, cy, "PCI Cihazlar:", COLOR_TEXT_CYAN, COLOR_WINDOW_BG); cy+=18;
+
+    int pci_count = pci_get_device_count();
+    int nic_found = 0;
+
+    for (int i = 0; i < pci_count && cy < wy+wh-24; i++) {
+        pci_device_t* dev = pci_get_device(i);
+        if (!dev) continue;
+
+        /* Vendor:Device */
+        char line[80];
+        k_memset(line, 0, 80);
+
+        /* Bus:Slot.Func */
+        char bs[4]; k_itoa(dev->bus, bs, 10);
+        char ss[4]; k_itoa(dev->slot, ss, 10);
+        char fs[2]; k_itoa(dev->func, fs, 10);
+
+        k_strcpy(line, bs);
+        k_strcpy(line + k_strlen(line), ":");
+        k_strcpy(line + k_strlen(line), ss);
+        k_strcpy(line + k_strlen(line), ".");
+        k_strcpy(line + k_strlen(line), fs);
+        k_strcpy(line + k_strlen(line), " ");
+
+        /* Vendor ID hex */
+        char vid[8]; k_itoa(dev->vendor_id, vid, 16);
+        char did[8]; k_itoa(dev->device_id, did, 16);
+
+        k_strcpy(line + k_strlen(line), vid);
+        k_strcpy(line + k_strlen(line), ":");
+        k_strcpy(line + k_strlen(line), did);
+
+        /* Sinif */
+        const char* cls = pci_class_name(dev->class_code, dev->subclass);
+        const char* vnd = pci_vendor_name(dev->vendor_id);
+
+        /* Renk: ag cihazi yesil, diger gri */
+        uint32_t color = COLOR_TEXT_GREY;
+        if (dev->class_code == PCI_CLASS_NETWORK) {
+            color = COLOR_TEXT_GREEN;
+            nic_found = 1;
+        }
+
+        vesa_draw_string(wx+20, cy, line, color, COLOR_WINDOW_BG);
+        vesa_draw_string(wx+180, cy, vnd, color, COLOR_WINDOW_BG);
+        vesa_draw_string(wx+280, cy, cls, color, COLOR_WINDOW_BG);
+        cy += 16;
+    }
+
+    /* Ag karti durumu */
+    cy += 4;
+    if (nic_found) {
+        vesa_fill_rect(wx+10, cy, ww-20, 20, 0x1A2A1A);
+        vesa_draw_rect_outline(wx+10, cy, ww-20, 20, 0x228822);
+        vesa_draw_string(wx+20, cy+2, "Ag karti bulundu! (Ethernet)", COLOR_TEXT_GREEN, 0x1A2A1A);
+    } else {
+        vesa_fill_rect(wx+10, cy, ww-20, 20, 0x3A1A1A);
+        vesa_draw_rect_outline(wx+10, cy, ww-20, 20, 0x882222);
+        vesa_draw_string(wx+20, cy+2, "Ag karti bulunamadi", COLOR_TEXT_RED, 0x3A1A1A);
+    }
 }
 
 static void show_about(void) {
