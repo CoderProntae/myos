@@ -97,7 +97,7 @@ static void cmd_time(void) {
 static void cmd_sysinfo(void) {
     char vendor[13];
     uint32_t ebx, ecx, edx;
-    asm volatile("cpuid" : "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0));
+    __asm__ __volatile__("cpuid" : "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0));
     *((uint32_t*)&vendor[0]) = ebx;
     *((uint32_t*)&vendor[4]) = edx;
     *((uint32_t*)&vendor[8]) = ecx;
