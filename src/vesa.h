@@ -57,28 +57,28 @@ typedef struct {
 #define COLOR_CLOSE_HOVER    0xFF2233
 #define COLOR_MENU_BG        0x2B2B3D
 #define COLOR_MENU_HOVER     0x0078D4
-#define COLOR_DESKTOP_ICON   0x3A3A5A
 #define COLOR_ACCENT         0x0078D4
 #define COLOR_BLACK          0x000000
 #define COLOR_TERMINAL_BG    0x0C0C0C
 
-void    vesa_init(multiboot_info_t* mbi);
-int     vesa_get_width(void);
-int     vesa_get_height(void);
-int     vesa_get_bpp(void);
-void    vesa_putpixel(int x, int y, uint32_t color);
-void    vesa_fill_rect(int x, int y, int w, int h, uint32_t color);
-void    vesa_fill_screen(uint32_t color);
-void    vesa_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
-void    vesa_draw_string(int x, int y, const char* str, uint32_t fg, uint32_t bg);
-void    vesa_draw_string_nobg(int x, int y, const char* str, uint32_t fg);
-void    vesa_draw_rect_outline(int x, int y, int w, int h, uint32_t color);
-void    vesa_draw_rounded_rect(int x, int y, int w, int h, uint32_t color, int r);
-void    vesa_copy_buffer(void);
+void     vesa_init(multiboot_info_t* mbi);
+int      vesa_get_width(void);
+int      vesa_get_height(void);
+int      vesa_get_bpp(void);
+void     vesa_putpixel(int x, int y, uint32_t color);
+void     vesa_fill_rect(int x, int y, int w, int h, uint32_t color);
+void     vesa_fill_screen(uint32_t color);
+void     vesa_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
+void     vesa_draw_string(int x, int y, const char* str, uint32_t fg, uint32_t bg);
+void     vesa_draw_string_nobg(int x, int y, const char* str, uint32_t fg);
+void     vesa_draw_rect_outline(int x, int y, int w, int h, uint32_t color);
+void     vesa_draw_rounded_rect(int x, int y, int w, int h, uint32_t color, int r);
+void     vesa_copy_buffer(void);
 
-/* Renk derinligi kontrolu */
-void    vesa_set_depth(int depth);
-int     vesa_get_depth(void);
+void     vesa_set_depth(int depth);
+int      vesa_get_depth(void);
+uint32_t vesa_preview_color(uint32_t color, int depth);
+void     vesa_putpixel_raw(int x, int y, uint32_t color);
 
 extern uint32_t* backbuffer;
 
