@@ -236,6 +236,7 @@ void app_file_explorer(void) {
         vesa_copy_buffer();
 
         if (!ms.click) continue;
+        mouse_clear_click();
 
         /* Kapat */
         if (ms.x >= wx + ww - 24 && ms.x < wx + ww - 8 &&
@@ -358,6 +359,7 @@ void app_notepad(void) {
 
         if (ms.click && ms.x >= wx + ww - 24 && ms.x < wx + ww - 8 &&
             ms.y >= wy + 8 && ms.y < wy + 24)
+            mouse_clear_click();
             return;
     }
 }
@@ -454,6 +456,7 @@ void app_calculator(void) {
         vesa_copy_buffer();
 
         if (!ms.click) continue;
+        mouse_clear_click();
 
         if (ms.x >= wx + ww - 24 && ms.x < wx + ww - 8 &&
             ms.y >= wy + 8 && ms.y < wy + 24)
