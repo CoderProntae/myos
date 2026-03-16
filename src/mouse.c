@@ -98,116 +98,85 @@ void mouse_init(void) {
 void mouse_poll(mouse_state_t* state) {
     state->x = mx;
     state->y = my;
-    state->left = cur_left;
-    state->right = cur_right;
+    state->left = 0;
+    state->right = 0;
     state->middle = 0;
     state->click = 0;
     state->right_click = 0;
 
     if (!ready) return;
 
-    /* En fazla 4 tam paket isle (12 byte) */
-    int bytes_read = 0;
+    uint8_t cur_l = 0;
+    uint8_t cur_r = 0;
+    int got_packet = 0;
 
+    int bytes_read = 0;
     while (bytes_read < 12) {
         uint8_t status = inb(0x64);
-
-        /* Veri yok */
-        if (!(status & 0x01))
-            break;
+        if (!(status & 0x01)) break;
 
         uint8_t byte = inb(0x60);
         bytes_read++;
 
-        /* Klavye verisi mi? (bit 5 = 0 ise klavye) */
-        if (!(status & 0x20))
-            continue;
+        if (!(status & 0x20)) continue;
 
-        /* Mouse byte'i — state machine */
         if (cycle == 0) {
-            /* Byte 0: kontrol */
-            if (!(byte & 0x08))
-                continue;  /* Senkronizasyon kaybi */
-            if (byte & 0xC0)
-                continue;  /* Overflow */
+            if (!(byte & 0x08)) continue;
+            if (byte & 0xC0) continue;
             pkt[0] = byte;
             cycle = 1;
-        }
-        else if (cycle == 1) {
+        } else if (cycle == 1) {
             pkt[1] = byte;
             cycle = 2;
-        }
-        else {
+        } else {
             pkt[2] = byte;
             cycle = 0;
+            got_packet = 1;
 
-            /*
-             * PS/2 protokolu:
-             *   pkt[1] = X hareket (0-255 unsigned)
-             *   pkt[2] = Y hareket (0-255 unsigned)
-             *   pkt[0] bit 4 = X sign (1 = negatif)
-             *   pkt[0] bit 5 = Y sign (1 = negatif)
-             *
-             * 9-bit signed deger:
-             *   sign=0, val=5   → +5
-             *   sign=1, val=251 → 251-256 = -5
-             */
-            int dx, dy;
-
-            if (pkt[0] & 0x10)
-                dx = (int)pkt[1] - 256;
-            else
-                dx = (int)pkt[1];
-
-            if (pkt[0] & 0x20)
-                dy = (int)pkt[2] - 256;
-            else
-                dy = (int)pkt[2];
-
-            /* Sapma korumasi */
-            if (dx > 50)  dx = 50;
+            int dx = (int)pkt[1];
+            int dy = (int)pkt[2];
+            if (pkt[0] & 0x10) dx -= 256;
+            if (pkt[0] & 0x20) dy -= 256;
+            if (dx > 50) dx = 50;
             if (dx < -50) dx = -50;
-            if (dy > 50)  dy = 50;
+            if (dy > 50) dy = 50;
             if (dy < -50) dy = -50;
 
-            /* Pozisyon guncelle */
             mx += dx;
             my -= dy;
-
             if (mx < 0) mx = 0;
             if (mx >= sw) mx = sw - 1;
             if (my < 0) my = 0;
             if (my >= sh) my = sh - 1;
 
-            /* Butonlar */
-            cur_left  = (pkt[0] & 0x01) ? 1 : 0;
-            cur_right = (pkt[0] & 0x02) ? 1 : 0;
-
-            /* Click: 0→1 gecisi */
-            if (cur_left && !prev_left)
-                pending_click = 1;
-            if (cur_right && !prev_right)
-                pending_rclick = 1;
-
-            prev_left = cur_left;
-            prev_right = cur_right;
+            cur_l = (pkt[0] & 0x01) ? 1 : 0;
+            cur_r = (pkt[0] & 0x02) ? 1 : 0;
         }
     }
 
-    /* Sonuclari doldur */
     state->x = mx;
     state->y = my;
-    state->left = cur_left;
-    state->right = cur_right;
 
-    /* Pending click'leri aktar */
-    if (pending_click) {
-        state->click = 1;
-        pending_click = 0;
-    }
-    if (pending_rclick) {
-        state->right_click = 1;
-        pending_rclick = 0;
+    if (got_packet) {
+        state->left = cur_l;
+        state->right = cur_r;
+
+        /* Click: SADECE 0→1 gecisi VE onceki frame'de 0 idi */
+        if (cur_l && !prev_left) {
+            state->click = 1;
+        }
+        if (cur_r && !prev_right) {
+            state->right_click = 1;
+        }
+
+        prev_left = cur_l;
+        prev_right = cur_r;
+    } else {
+        /* Paket gelmediyse onceki durumu koru AMA click uretme */
+        state->left = prev_left;
+        state->right = prev_right;
+        state->click = 0;
+        state->right_click = 0;
     }
 }
 
