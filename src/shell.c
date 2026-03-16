@@ -127,7 +127,7 @@ static void process_command(const char* cmd) {
     if (k_strcmp(cmd, "shutdown") == 0) {
         vga_print_colored("\n  Kapatiliyor...\n", VGA_YELLOW, VGA_BLACK);
         outb(0x604, 0x2000); outb(0xB004, 0x2000);
-        asm volatile("cli; hlt"); return;
+        __asm__ __volatile__("cli; hlt");
     }
     if (k_strncmp(cmd, "echo ", 5) == 0) {
         vga_print("\n  ");
