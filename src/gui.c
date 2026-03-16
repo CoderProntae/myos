@@ -5,6 +5,7 @@
 #include "string.h"
 #include "icons.h"
 #include "io.h"
+#include "pci.h"
 #include "apps.h"
 #include "browser.h"
 
