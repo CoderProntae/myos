@@ -14,6 +14,7 @@
 #include "syscall.h"
 #include "task.h"
 #include "posix.h"
+#include "gfx.h"
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     (void)magic;
@@ -28,6 +29,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     task_init();
     posix_init();
     vesa_init(mbi);
+    gfx_init();
     mouse_init();
     pci_init();
     e1000_init();
