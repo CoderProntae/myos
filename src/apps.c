@@ -416,3 +416,227 @@ void app_calculator(void) {
         }
     }
 }
+
+/* ============================================================ */
+/*                    GOREV YONETICISI                          */
+/* ============================================================ */
+
+#include "task.h"
+
+void app_task_manager(void) {
+    mouse_state_t ms;
+    int selected_task = -1;
+
+    while (1) {
+        mouse_poll(&ms);
+        int key = keyboard_poll();
+
+        if (key == KEY_ESC) return;
+        if (key == KEY_F4 && keyboard_alt_held()) return;
+
+        int wx = 80, wy = 40, ww = 640, wh = 480;
+
+        vesa_fill_screen(COLOR_BG);
+
+        /* Pencere */
+        vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
+        vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
+        vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
+        vesa_draw_string(wx + 16, wy + 8, "Gorev Yoneticisi", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
+
+        /* Kapat butonu */
+        int clx = wx + ww - 28, cly = wy + 4;
+        int clh = (ms.x >= clx && ms.x < clx + 24 && ms.y >= cly && ms.y < cly + 24);
+        vesa_fill_rect(clx, cly, 24, 24, clh ? 0xFF2233 : COLOR_CLOSE_BTN);
+        for (int i = 0; i < 8; i++) {
+            vesa_putpixel(clx + 4 + i, cly + 4 + i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx + 5 + i, cly + 4 + i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx + 11 - i, cly + 4 + i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx + 12 - i, cly + 4 + i, COLOR_TEXT_WHITE);
+        }
+
+        /* Ozet bilgi */
+        int iy = wy + 38;
+        vesa_fill_rect(wx + 10, iy, ww - 20, 50, 0x1A1A2A);
+        vesa_draw_rect_outline(wx + 10, iy, ww - 20, 50, COLOR_WINDOW_BORDER);
+
+        char buf[32];
+        vesa_draw_string(wx + 20, iy + 4, "Aktif Gorev:", COLOR_TEXT_GREY, 0x1A1A2A);
+        k_itoa(task_get_count(), buf, 10);
+        vesa_draw_string(wx + 130, iy + 4, buf, COLOR_TEXT_GREEN, 0x1A1A2A);
+
+        vesa_draw_string(wx + 200, iy + 4, "Maks:", COLOR_TEXT_GREY, 0x1A1A2A);
+        k_itoa(MAX_TASKS, buf, 10);
+        vesa_draw_string(wx + 260, iy + 4, buf, COLOR_TEXT_WHITE, 0x1A1A2A);
+
+        vesa_draw_string(wx + 20, iy + 22, "Uptime:", COLOR_TEXT_GREY, 0x1A1A2A);
+        uint32_t up_secs = task_get_ticks() / 100;
+        uint32_t up_min = up_secs / 60;
+        uint32_t up_sec = up_secs % 60;
+        k_itoa((int)up_min, buf, 10);
+        vesa_draw_string(wx + 100, iy + 22, buf, COLOR_TEXT_CYAN, 0x1A1A2A);
+        vesa_draw_string(wx + 100 + k_strlen(buf) * 8, iy + 22, "m ", COLOR_TEXT_GREY, 0x1A1A2A);
+        k_itoa((int)up_sec, buf, 10);
+        vesa_draw_string(wx + 130, iy + 22, buf, COLOR_TEXT_CYAN, 0x1A1A2A);
+        vesa_draw_string(wx + 130 + k_strlen(buf) * 8, iy + 22, "s", COLOR_TEXT_GREY, 0x1A1A2A);
+
+        vesa_draw_string(wx + 200, iy + 22, "Heap:", COLOR_TEXT_GREY, 0x1A1A2A);
+        k_itoa((int)heap_get_used(), buf, 10);
+        vesa_draw_string(wx + 260, iy + 22, buf, COLOR_TEXT_YELLOW, 0x1A1A2A);
+        vesa_draw_string(wx + 260 + k_strlen(buf) * 8, iy + 22, " B", COLOR_TEXT_GREY, 0x1A1A2A);
+
+        vesa_draw_string(wx + 400, iy + 22, "RAM:", COLOR_TEXT_GREY, 0x1A1A2A);
+        k_itoa((int)ram_get_total_mb(), buf, 10);
+        vesa_draw_string(wx + 450, iy + 22, buf, COLOR_TEXT_GREEN, 0x1A1A2A);
+        vesa_draw_string(wx + 450 + k_strlen(buf) * 8, iy + 22, " MB", COLOR_TEXT_GREY, 0x1A1A2A);
+
+        /* Baslik satiri */
+        int ty = iy + 56;
+        vesa_fill_rect(wx + 10, ty, ww - 20, 20, 0x252545);
+        vesa_draw_string(wx + 15, ty + 2, "ID", COLOR_TEXT_CYAN, 0x252545);
+        vesa_draw_string(wx + 50, ty + 2, "Ad", COLOR_TEXT_CYAN, 0x252545);
+        vesa_draw_string(wx + 200, ty + 2, "Durum", COLOR_TEXT_CYAN, 0x252545);
+        vesa_draw_string(wx + 310, ty + 2, "Oncelik", COLOR_TEXT_CYAN, 0x252545);
+        vesa_draw_string(wx + 420, ty + 2, "CPU", COLOR_TEXT_CYAN, 0x252545);
+        vesa_draw_string(wx + 510, ty + 2, "Bellek", COLOR_TEXT_CYAN, 0x252545);
+
+        /* Gorev listesi */
+        int row_y = ty + 22;
+        for (int i = 0; i < MAX_TASKS; i++) {
+            task_t* t = task_get(i);
+            if (!t) continue;
+            if (t->state == TASK_STATE_FREE) continue;
+
+            int row_hover = (ms.x >= wx + 10 && ms.x < wx + ww - 10 &&
+                             ms.y >= row_y && ms.y < row_y + 20);
+            int is_sel = (i == selected_task);
+            uint32_t row_bg = is_sel ? COLOR_ACCENT :
+                              row_hover ? 0x2A2A44 : COLOR_WINDOW_BG;
+
+            vesa_fill_rect(wx + 10, row_y, ww - 20, 20, row_bg);
+
+            /* ID */
+            k_itoa(t->id, buf, 10);
+            vesa_draw_string(wx + 15, row_y + 2, buf, COLOR_TEXT_WHITE, row_bg);
+
+            /* Ad */
+            vesa_draw_string(wx + 50, row_y + 2, t->name, COLOR_TEXT_WHITE, row_bg);
+
+            /* Durum */
+            const char* state_str;
+            uint32_t state_color;
+            switch (t->state) {
+                case TASK_STATE_RUNNING:
+                    state_str = "Calisiyor";
+                    state_color = COLOR_TEXT_GREEN;
+                    break;
+                case TASK_STATE_READY:
+                    state_str = "Hazir";
+                    state_color = COLOR_TEXT_CYAN;
+                    break;
+                case TASK_STATE_SLEEPING:
+                    state_str = "Uyuyor";
+                    state_color = COLOR_TEXT_YELLOW;
+                    break;
+                case TASK_STATE_BLOCKED:
+                    state_str = "Bloke";
+                    state_color = COLOR_TEXT_RED;
+                    break;
+                case TASK_STATE_DEAD:
+                    state_str = "Oldu";
+                    state_color = COLOR_TEXT_GREY;
+                    break;
+                default:
+                    state_str = "?";
+                    state_color = COLOR_TEXT_GREY;
+                    break;
+            }
+            vesa_draw_string(wx + 200, row_y + 2, state_str, state_color, row_bg);
+
+            /* Oncelik */
+            const char* pri_str;
+            uint32_t pri_color;
+            switch (t->priority) {
+                case TASK_PRIORITY_SYSTEM: pri_str = "Sistem"; pri_color = COLOR_TEXT_RED; break;
+                case TASK_PRIORITY_HIGH:   pri_str = "Yuksek"; pri_color = COLOR_TEXT_YELLOW; break;
+                case TASK_PRIORITY_NORMAL: pri_str = "Normal"; pri_color = COLOR_TEXT_GREEN; break;
+                default:                   pri_str = "Dusuk";  pri_color = COLOR_TEXT_GREY; break;
+            }
+            vesa_draw_string(wx + 310, row_y + 2, pri_str, pri_color, row_bg);
+
+            /* CPU ticks */
+            k_itoa((int)t->cpu_time, buf, 10);
+            vesa_draw_string(wx + 420, row_y + 2, buf, COLOR_TEXT_WHITE, row_bg);
+
+            /* Bellek */
+            k_itoa((int)t->mem_usage, buf, 10);
+            k_strcpy(buf + k_strlen(buf), " B");
+            vesa_draw_string(wx + 510, row_y + 2, buf, COLOR_TEXT_WHITE, row_bg);
+
+            row_y += 22;
+            if (row_y > wy + wh - 60) break;
+        }
+
+        /* Alt butonlar */
+        int btn_y = wy + wh - 45;
+
+        /* Gorevi Sonlandir butonu */
+        int kill_x = wx + ww / 2 - 80;
+        int kill_hover = (ms.x >= kill_x && ms.x < kill_x + 160 &&
+                          ms.y >= btn_y && ms.y < btn_y + 32);
+        uint32_t kill_bg = (selected_task > 0 && kill_hover) ? 0xFF2233 : 0x882222;
+        if (selected_task <= 0) kill_bg = 0x333344;
+        vesa_fill_rect(kill_x, btn_y, 160, 32, kill_bg);
+        vesa_draw_rect_outline(kill_x, btn_y, 160, 32, COLOR_WINDOW_BORDER);
+        vesa_draw_string(kill_x + 16, btn_y + 8, "Gorevi Sonlandir",
+                         selected_task > 0 ? COLOR_TEXT_WHITE : COLOR_TEXT_GREY, kill_bg);
+
+        /* Durum cubugu */
+        vesa_fill_rect(wx, wy + wh - 18, ww, 18, COLOR_TASKBAR);
+        if (selected_task >= 0) {
+            task_t* st = task_get(selected_task);
+            if (st && st->state != TASK_STATE_FREE) {
+                char sb[64];
+                k_strcpy(sb, "Secili: ");
+                k_strcpy(sb + k_strlen(sb), st->name);
+                k_strcpy(sb + k_strlen(sb), " (ID:");
+                k_itoa(st->id, sb + k_strlen(sb), 10);
+                k_strcpy(sb + k_strlen(sb), ")");
+                vesa_draw_string(wx + 8, wy + wh - 14, sb, COLOR_TEXT_GREY, COLOR_TASKBAR);
+            }
+        }
+
+        mouse_draw_cursor(ms.x, ms.y);
+        vesa_copy_buffer();
+
+        /* Scheduler tick */
+        task_schedule();
+
+        if (!ms.click) continue;
+
+        /* Kapat */
+        if (ms.x >= clx && ms.x < clx + 24 && ms.y >= cly && ms.y < cly + 24)
+            return;
+
+        /* Gorev secimi */
+        row_y = ty + 22;
+        for (int i = 0; i < MAX_TASKS; i++) {
+            task_t* t = task_get(i);
+            if (!t || t->state == TASK_STATE_FREE) continue;
+            if (ms.x >= wx + 10 && ms.x < wx + ww - 10 &&
+                ms.y >= row_y && ms.y < row_y + 20) {
+                selected_task = i;
+                break;
+            }
+            row_y += 22;
+            if (row_y > wy + wh - 60) break;
+        }
+
+        /* Gorevi Sonlandir */
+        if (selected_task > 0 && ms.x >= kill_x && ms.x < kill_x + 160 &&
+            ms.y >= btn_y && ms.y < btn_y + 32) {
+            task_kill(selected_task);
+            selected_task = -1;
+        }
+    }
+}
