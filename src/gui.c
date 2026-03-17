@@ -525,6 +525,14 @@ static int gt_process(void) {
 
     if (!k_strcmp(c, "memtest")) {
         gt_puts_c("  Bellek testi basliyor...\n", 3);
+        char b2[20];
+
+        /* Baslangic durumu */
+        gt_puts_c("  Baslangic: ", 0);
+        k_itoa((int)heap_get_used(), b2, 10);
+        gt_puts_c(b2, 0);
+        gt_puts_c(" byte kullaniliyor\n", 0);
+        uint32_t start_used = heap_get_used();
 
         /* Test 1: Ayirma */
         void* p1 = kmalloc(1024);
@@ -532,11 +540,20 @@ static int gt_process(void) {
         void* p3 = kmalloc(4096);
 
         if (p1 && p2 && p3) {
-            gt_puts_c("  [OK] 3 blok ayrildi (1K+2K+4K)\n", 1);
+            gt_puts_c("  [OK] 3 blok ayrildi\n", 1);
         } else {
             gt_puts_c("  [FAIL] Ayirma basarisiz!\n", 4);
+            if (p1) kfree(p1);
+            if (p2) kfree(p2);
+            if (p3) kfree(p3);
             return 0;
         }
+
+        /* Kullanim artmis olmali */
+        gt_puts_c("  Ayirma sonrasi: ", 0);
+        k_itoa((int)heap_get_used(), b2, 10);
+        gt_puts_c(b2, 3);
+        gt_puts_c(" byte\n", 0);
 
         /* Test 2: Yazma/okuma */
         uint8_t* test = (uint8_t*)p1;
@@ -545,42 +562,46 @@ static int gt_process(void) {
         for (int i = 0; i < 1024; i++) {
             if (test[i] != (uint8_t)(i & 0xFF)) { ok = 0; break; }
         }
-        if (ok) {
-            gt_puts_c("  [OK] Yazma/okuma testi basarili\n", 1);
-        } else {
-            gt_puts_c("  [FAIL] Veri bozulmasi!\n", 4);
-        }
+        gt_puts_c(ok ? "  [OK] Yazma/okuma basarili\n" :
+                        "  [FAIL] Veri bozulmasi!\n", ok ? 1 : 4);
 
-        /* Test 3: Serbest birakma */
-        char buf2[20];
-        gt_puts_c("  Kullanilan: ", 0);
-        k_itoa((int)(heap_get_used() / 1024), buf2, 10);
-        gt_puts_c(buf2, 3);
-        gt_puts_c(" KB\n", 0);
+        /* Test 3: Serbest birakma — SIRAYLA */
+        kfree(p1);
+        gt_puts_c("  [OK] p1 serbest (", 1);
+        k_itoa((int)heap_get_used(), b2, 10);
+        gt_puts_c(b2, 0);
+        gt_puts_c(" byte)\n", 0);
 
         kfree(p2);
-        gt_puts_c("  [OK] p2 serbest birakildi\n", 1);
-
-        kfree(p1);
-        gt_puts_c("  [OK] p1 serbest birakildi\n", 1);
+        gt_puts_c("  [OK] p2 serbest (", 1);
+        k_itoa((int)heap_get_used(), b2, 10);
+        gt_puts_c(b2, 0);
+        gt_puts_c(" byte)\n", 0);
 
         kfree(p3);
-        gt_puts_c("  [OK] p3 serbest birakildi\n", 1);
+        gt_puts_c("  [OK] p3 serbest (", 1);
+        k_itoa((int)heap_get_used(), b2, 10);
+        gt_puts_c(b2, 0);
+        gt_puts_c(" byte)\n", 0);
 
-        gt_puts_c("  Kullanilan: ", 0);
-        k_itoa((int)(heap_get_used() / 1024), buf2, 10);
-        gt_puts_c(buf2, 1);
-        gt_puts_c(" KB\n", 0);
-
-        gt_puts_c("  Bloklar: ", 0);
-        k_itoa((int)heap_get_block_count(), buf2, 10);
-        gt_puts_c(buf2, 2);
+        /* Sonuc */
+        uint32_t end_used = heap_get_used();
+        gt_puts_c("  ---\n", 0);
+        gt_puts_c("  Baslangic: ", 0);
+        k_itoa((int)start_used, b2, 10);
+        gt_puts_c(b2, 0);
+        gt_puts_c("  Bitis: ", 0);
+        k_itoa((int)end_used, b2, 10);
+        gt_puts_c(b2, 0);
         gt_putc('\n');
 
-        if (heap_get_used() == 0) {
+        if (end_used == start_used) {
             gt_puts_c("  BELLEK TESTI BASARILI!\n", 1);
         } else {
-            gt_puts_c("  UYARI: Bellek sizintisi!\n", 4);
+            gt_puts_c("  UYARI: ", 4);
+            k_itoa((int)(end_used - start_used), b2, 10);
+            gt_puts_c(b2, 4);
+            gt_puts_c(" byte sizinti!\n", 4);
         }
         return 0;
     }
