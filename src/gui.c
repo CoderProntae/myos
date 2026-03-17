@@ -19,6 +19,7 @@
 #include "task.h"
 #include "libc.h"
 #include "posix.h"
+#include "gfx.h"
 
 static int start_open = 0, window_open = 0;
 static int settings_selected_depth = 32, current_hz = 60, selected_hz = 60;
@@ -169,6 +170,7 @@ static int gt_process(void) {
         gt_puts_c("  libctest", 2);  gt_puts_c("  - libc testi\n", 0);
         gt_puts_c("  posixtest", 2); gt_puts_c(" - POSIX testi\n", 0);
         gt_puts_c("  env", 2);      gt_puts_c("       - Ortam degiskenleri\n", 0);
+        gt_puts_c("  gfxtest", 2);   gt_puts_c("   - Grafik testi\n", 0);
         gt_puts_c("  exit", 2);     gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);   gt_puts_c("    - Yeniden baslat\n", 0);
         return 0;
@@ -806,6 +808,88 @@ static int gt_process(void) {
         return 0;
     }
 
+    if (!k_strcmp(c, "gfxtest")) {
+        gt_puts_c("  Grafik testi baslatiliyor...\n", 3);
+        gt_render();
+
+        gfx_init();
+
+        /* Demo ekrani */
+        gfx_clear(0x1A1A2E);
+
+        /* Baslik */
+        gfx_fill_rect(0, 0, gfx_get_width(), 40, 0x252545);
+        gfx_text(16, 12, "MyOS GFX Demo - ESC ile cik", GFX_WHITE, 0x252545);
+
+        /* Gradient */
+        gfx_gradient_h(20, 60, 300, 30, GFX_RED, GFX_BLUE);
+        gfx_text_nobg(20, 50, "Yatay Gradient", GFX_WHITE);
+
+        gfx_gradient_v(340, 60, 30, 100, GFX_GREEN, GFX_YELLOW);
+        gfx_text_nobg(340, 50, "Dikey", GFX_WHITE);
+
+        /* Dikdortgenler */
+        gfx_fill_rect(20, 110, 100, 60, GFX_RED);
+        gfx_rect(20, 110, 100, 60, GFX_WHITE);
+        gfx_text_nobg(30, 130, "fill_rect", GFX_WHITE);
+
+        gfx_rounded_rect(140, 110, 120, 60, 10, 0x0078D4);
+        gfx_text_nobg(155, 130, "rounded", GFX_WHITE);
+
+        /* Daireler */
+        gfx_fill_circle(340, 140, 30, GFX_GREEN);
+        gfx_circle(340, 140, 30, GFX_WHITE);
+        gfx_text_nobg(310, 180, "circle", GFX_WHITE);
+
+        gfx_fill_circle(420, 140, 20, GFX_MAGENTA);
+        gfx_fill_circle(450, 140, 15, GFX_CYAN);
+        gfx_fill_circle(475, 140, 10, GFX_YELLOW);
+
+        /* Cizgiler */
+        gfx_text_nobg(20, 195, "Cizgiler:", GFX_WHITE);
+        for (int i = 0; i < 8; i++) {
+            uint32_t lc = GFX_RGB(i * 32, 255 - i * 32, 128);
+            gfx_line(20, 210 + i * 4, 200, 210 + i * 15, lc);
+        }
+
+        /* Ucgenler */
+        gfx_fill_triangle(250, 200, 350, 280, 200, 280, 0xFF6644);
+        gfx_triangle(250, 200, 350, 280, 200, 280, GFX_WHITE);
+        gfx_text_nobg(240, 285, "triangle", GFX_WHITE);
+
+        /* Alpha blending */
+        gfx_fill_rect(400, 200, 150, 80, 0x0078D4);
+        gfx_fill_rect_alpha(420, 220, 120, 80, GFX_RED, 128);
+        gfx_text_nobg(400, 310, "Alpha blend", GFX_WHITE);
+
+        /* Surface */
+        gfx_surface_t* surf = gfx_create_surface(32, 32);
+        if (surf) {
+            for (int sy = 0; sy < 32; sy++)
+                for (int sx = 0; sx < 32; sx++)
+                    surf->pixels[sy * 32 + sx] = GFX_RGB(sx * 8, sy * 8, 128);
+            gfx_blit(surf, 0, 580, 340);
+            gfx_blit_scaled(surf, 640, 340, 96, 96);
+            gfx_text_nobg(580, 450, "Surface + Blit", GFX_WHITE);
+            gfx_free_surface(surf);
+        }
+
+        /* Bilgi */
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Ekran: %dx%d", gfx_get_width(), gfx_get_height());
+        gfx_text(20, 560, buf, GFX_CYAN, 0x1A1A2E);
+
+        gfx_flip();
+
+        /* ESC bekle */
+        while (1) {
+            int key = keyboard_getchar();
+            if (key == KEY_ESC) break;
+        }
+
+        return 0;
+    }
+    
     if (!k_strcmp(c, "env")) {
         gt_puts_c("  Ortam Degiskenleri:\n", 3);
         char buf2[128];
