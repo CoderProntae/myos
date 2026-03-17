@@ -20,6 +20,7 @@
 #include "libc.h"
 #include "posix.h"
 #include "gfx.h"
+#include "canvas.h"
 
 static int start_open = 0, window_open = 0;
 static int settings_selected_depth = 32, current_hz = 60, selected_hz = 60;
@@ -171,6 +172,7 @@ static int gt_process(void) {
         gt_puts_c("  posixtest", 2); gt_puts_c(" - POSIX testi\n", 0);
         gt_puts_c("  env", 2);      gt_puts_c("       - Ortam degiskenleri\n", 0);
         gt_puts_c("  gfxtest", 2);   gt_puts_c("   - Grafik testi\n", 0);
+        gt_puts_c("  canvastest", 2); gt_puts_c(" - Canvas testi\n", 0);
         gt_puts_c("  exit", 2);     gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);   gt_puts_c("    - Yeniden baslat\n", 0);
         return 0;
@@ -887,6 +889,134 @@ static int gt_process(void) {
             if (key == KEY_ESC) break;
         }
 
+        return 0;
+    }
+
+    if (!k_strcmp(c, "canvastest")) {
+        gt_puts_c("  Canvas 2D demo baslatiliyor...\n", 3);
+        gt_render();
+
+        canvas_t* ctx = canvas_create_for_screen();
+        if (!ctx) { gt_puts_c("  Canvas olusturulamadi!\n", 4); return 0; }
+
+        canvas_clear(ctx, 0x1A1A2E);
+
+        /* Baslik */
+        canvas_set_fill_color(ctx, 0x252545);
+        canvas_fill_rect(ctx, 0, 0, ctx->width, 40);
+        canvas_set_fill_color(ctx, 0xFFFFFF);
+        canvas_fill_text(ctx, 16, 12, "MyOS Canvas 2D Demo - ESC ile cik");
+
+        /* Gradient dikdortgen */
+        gradient_t* g1 = canvas_create_linear_gradient(30, 60, 250, 60);
+        canvas_gradient_add_stop(g1, 0.0f, 0xFF0000);
+        canvas_gradient_add_stop(g1, 0.5f, 0x00FF00);
+        canvas_gradient_add_stop(g1, 1.0f, 0x0000FF);
+        for (int py = 60; py < 100; py++)
+            for (int px = 30; px < 250; px++)
+                put_pixel(ctx, px, py, gradient_color_at(g1, px, py));
+        canvas_free_gradient(g1);
+        canvas_set_fill_color(ctx, 0xFFFFFF);
+        canvas_fill_text(ctx, 30, 50, "Linear Gradient");
+
+        /* Radial gradient */
+        gradient_t* g2 = canvas_create_radial_gradient(400, 80, 50);
+        canvas_gradient_add_stop(g2, 0.0f, 0xFFFF00);
+        canvas_gradient_add_stop(g2, 1.0f, 0xFF0000);
+        for (int py = 30; py < 130; py++)
+            for (int px = 350; px < 450; px++)
+                put_pixel(ctx, px, py, gradient_color_at(g2, px, py));
+        canvas_free_gradient(g2);
+
+        /* Rounded rect + shadow */
+        canvas_set_shadow(ctx, 4, 4, 0, 0x333333);
+        canvas_set_fill_color(ctx, 0x0078D4);
+        canvas_fill_rounded_rect(ctx, 30, 120, 200, 80, 12);
+        canvas_disable_shadow(ctx);
+        canvas_set_fill_color(ctx, 0xFFFFFF);
+        canvas_fill_text(ctx, 50, 150, "Rounded + Shadow");
+
+        /* Daireler */
+        canvas_set_fill_color(ctx, 0xFF4444);
+        canvas_fill_circle(ctx, 350, 160, 30);
+        canvas_set_fill_color(ctx, 0x44FF44);
+        canvas_fill_circle(ctx, 380, 160, 25);
+        canvas_set_fill_color(ctx, 0x4444FF);
+        canvas_fill_circle(ctx, 410, 160, 20);
+
+        /* Ellipse */
+        canvas_set_fill_color(ctx, 0xFF66FF);
+        canvas_fill_ellipse(ctx, 550, 160, 60, 30);
+        canvas_set_fill_color(ctx, 0xFFFFFF);
+        canvas_fill_text(ctx, 520, 200, "Ellipse");
+
+        /* Star */
+        canvas_set_fill_color(ctx, 0xFFCC00);
+        canvas_fill_star(ctx, 100, 280, 40, 18, 5);
+        canvas_set_fill_color(ctx, 0xFFFFFF);
+        canvas_fill_text(ctx, 70, 330, "Star(5)");
+
+        canvas_set_fill_color(ctx, 0x00CCFF);
+        canvas_fill_star(ctx, 220, 280, 35, 15, 8);
+        canvas_fill_text(ctx, 190, 330, "Star(8)");
+
+        /* Polygon */
+        int poly[] = {350,240, 420,260, 400,320, 340,310, 310,270};
+        canvas_set_fill_color(ctx, 0x44AA88);
+        canvas_fill_polygon(ctx, poly, 5);
+        canvas_set_stroke_color(ctx, 0xFFFFFF);
+        canvas_set_stroke_width(ctx, 2);
+        canvas_polygon(ctx, poly, 5);
+        canvas_set_fill_color(ctx, 0xFFFFFF);
+        canvas_fill_text(ctx, 330, 330, "Polygon");
+
+        /* Thick lines */
+        canvas_set_stroke_color(ctx, 0xFF6644);
+        canvas_set_stroke_width(ctx, 3);
+        canvas_line(ctx, 500, 240, 600, 320);
+        canvas_set_stroke_color(ctx, 0x44FF66);
+        canvas_line(ctx, 600, 240, 500, 320);
+        canvas_set_stroke_width(ctx, 1);
+
+        /* Alpha blending */
+        canvas_set_fill_color(ctx, 0x0078D4);
+        canvas_fill_rect(ctx, 30, 370, 150, 80);
+        canvas_set_alpha(ctx, 128);
+        canvas_set_fill_color(ctx, 0xFF0000);
+        canvas_fill_rect(ctx, 80, 400, 150, 80);
+        canvas_set_alpha(ctx, 255);
+        canvas_set_fill_color(ctx, 0xFFFFFF);
+        canvas_fill_text(ctx, 30, 490, "Alpha Blend");
+
+        /* Path demo */
+        canvas_begin_path(ctx);
+        canvas_move_to(ctx, 300, 400);
+        canvas_line_to(ctx, 380, 380);
+        canvas_line_to(ctx, 400, 460);
+        canvas_line_to(ctx, 320, 480);
+        canvas_close_path(ctx);
+        canvas_set_fill_color(ctx, 0x884488);
+        canvas_fill(ctx);
+        canvas_set_stroke_color(ctx, 0xFFFFFF);
+        canvas_stroke(ctx);
+        canvas_set_fill_color(ctx, 0xFFFFFF);
+        canvas_fill_text(ctx, 310, 490, "Path");
+
+        /* Bilgi */
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Canvas: %dx%d | Heap: %d B",
+                 ctx->width, ctx->height, (int)heap_get_used());
+        canvas_set_fill_color(ctx, 0x888888);
+        canvas_fill_text(ctx, 20, 560, buf);
+
+        canvas_flush(ctx);
+
+        while (1) {
+            int key = keyboard_getchar();
+            if (key == KEY_ESC) break;
+        }
+
+        canvas_destroy(ctx);
         return 0;
     }
     
