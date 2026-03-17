@@ -5,101 +5,23 @@
 #include "string.h"
 #include "icons.h"
 #include "io.h"
+#include "vfs.h"
+#include "heap.h"
 
 /* ============================================================ */
-/*                    SANAL DOSYA SISTEMI                        */
+/*                     DOSYA GEZGINI (VFS)                      */
 /* ============================================================ */
 
-#define MAX_FILES 16
-#define MAX_PATH  128
-
-typedef struct {
-    char name[32];
-    int  is_dir;
-    int  parent;
-    int  size;
-    const char* content;
-} vfile_t;
-
-static vfile_t vfs[] = {
-    /* 0  */ {"Belgeler",     1, -1, 0, 0},
-    /* 1  */ {"Sistem",       1, -1, 0, 0},
-    /* 2  */ {"Programlar",   1, -1, 0, 0},
-    /* 3  */ {"readme.txt",   0, 0, 156,
-              "MyOS v0.3 - Hosgeldiniz!\n\n"
-              "Bu isletim sistemi sifirdan\n"
-              "C ve Assembly ile yazildi.\n\n"
-              "Komutlar icin terminali acin."},
-    /* 4  */ {"notlar.txt",   0, 0, 89,
-              "Yapilacaklar:\n"
-              "- Dosya sistemi ekle\n"
-              "- Ag destegi ekle\n"
-              "- Tarayici entegre et"},
-    /* 5  */ {"kernel.bin",   0, 1, 32768, "[Binary: Cekirdek dosyasi]"},
-    /* 6  */ {"config.sys",   0, 1, 245,
-              "[Sistem Yapilandirmasi]\n"
-              "boot=grub\n"
-              "video=vesa,800x600x32\n"
-              "mouse=ps2\n"
-              "keyboard=ps2"},
-    /* 7  */ {"suruculer",    1, 1, 0, 0},
-    /* 8  */ {"terminal.app", 0, 2, 4096,  "[Program: Terminal]"},
-    /* 9  */ {"gezgin.app",   0, 2, 3584,  "[Program: Dosya Gezgini]"},
-    /* 10 */ {"hesap.app",    0, 2, 2048,  "[Program: Hesap Makinesi]"},
-    /* 11 */ {"vga.sys",      0, 7, 8192,  "[Surucu: VGA/VESA]"},
-    /* 12 */ {"mouse.sys",    0, 7, 4096,  "[Surucu: PS/2 Mouse]"},
-    /* 13 */ {"kb.sys",       0, 7, 3072,  "[Surucu: PS/2 Klavye]"},
-    /* 14 */ {"merhaba.txt",  0, 0, 42,    "Merhaba Dunya!\nBu bir test dosyasidir."},
-    /* 15 */ {"resimler",     1, -1,0, 0},
-};
-#define VFS_COUNT 16
-
-static int  current_dir = -1;
-static int  selected_file = -1;
-static int  preview_file = -1;
-
-static int count_children(int parent) {
-    int c = 0;
-    for (int i = 0; i < VFS_COUNT; i++)
-        if (vfs[i].parent == parent) c++;
-    return c;
-}
-
-static int get_child(int parent, int n) {
-    int c = 0;
-    for (int i = 0; i < VFS_COUNT; i++) {
-        if (vfs[i].parent == parent) {
-            if (c == n) return i;
-            c++;
-        }
-    }
-    return -1;
-}
-
-static void build_path(int dir, char* path) {
-    if (dir == -1) {
-        k_strcpy(path, "/");
-        return;
-    }
-    char tmp[64];
-    if (vfs[dir].parent == -1) {
-        path[0] = '/';
-        k_strcpy(path + 1, vfs[dir].name);
-    } else {
-        build_path(vfs[dir].parent, tmp);
-        k_strcpy(path, tmp);
-        int l = k_strlen(path);
-        path[l] = '/';
-        k_strcpy(path + l + 1, vfs[dir].name);
-    }
-}
+static int  fe_dir = -1;       /* mevcut klasor (-1=root) */
+static int  fe_selected = -1;  /* secili dosya/klasor */
+static int  fe_preview = -1;   /* onizleme dosyasi */
 
 void app_file_explorer(void) {
     mouse_state_t ms;
     int wx = 40, wy = 20, ww = 720, wh = 530;
-    current_dir = -1;
-    selected_file = -1;
-    preview_file = -1;
+    fe_dir = -1;
+    fe_selected = -1;
+    fe_preview = -1;
 
     while (1) {
         mouse_poll(&ms);
@@ -107,12 +29,15 @@ void app_file_explorer(void) {
 
         if (key == KEY_ESC) return;
         if (key == KEY_F4 && keyboard_alt_held()) return;
-        if (key == '\b' && current_dir != -1) {
-            current_dir = vfs[current_dir].parent;
-            selected_file = -1;
-            preview_file = -1;
+        if (key == '\b' && fe_dir != -1) {
+            vfs_node_t* dn = vfs_get_node(fe_dir);
+            if (dn) fe_dir = dn->parent;
+            else fe_dir = -1;
+            fe_selected = -1;
+            fe_preview = -1;
         }
 
+        /* --- Cizim --- */
         vesa_fill_screen(COLOR_BG);
 
         /* Pencere */
@@ -121,18 +46,29 @@ void app_file_explorer(void) {
         vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
         draw_folder_icon(wx + 8, wy + 8);
         vesa_draw_string(wx + 28, wy + 8, "Dosya Gezgini", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
-        draw_close_button(wx + ww - 24, wy + 8, COLOR_CLOSE_BTN);
+
+        /* Kapat butonu */
+        int close_x = wx + ww - 28, close_y = wy + 4;
+        int close_hover = (ms.x >= close_x && ms.x < close_x + 24 &&
+                           ms.y >= close_y && ms.y < close_y + 24);
+        vesa_fill_rect(close_x, close_y, 24, 24, close_hover ? 0xFF2233 : COLOR_CLOSE_BTN);
+        for (int i = 0; i < 8; i++) {
+            vesa_putpixel(close_x+4+i, close_y+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(close_x+5+i, close_y+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(close_x+11-i, close_y+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(close_x+12-i, close_y+4+i, COLOR_TEXT_WHITE);
+        }
 
         /* Adres cubugu */
         vesa_fill_rect(wx + 10, wy + 38, ww - 20, 24, 0x1A1A2A);
         vesa_draw_rect_outline(wx + 10, wy + 38, ww - 20, 24, COLOR_WINDOW_BORDER);
-        char path[MAX_PATH];
-        build_path(current_dir, path);
+        char path[VFS_MAX_PATH];
+        vfs_build_path(fe_dir, path);
         vesa_draw_string(wx + 16, wy + 42, path, COLOR_TEXT_CYAN, 0x1A1A2A);
 
         /* Sol panel */
         int lx = wx + 10, ly = wy + 68;
-        int lw = (preview_file >= 0) ? 380 : (ww - 20);
+        int lw = (fe_preview >= 0) ? 380 : (ww - 20);
         int lh = wh - 78;
         vesa_fill_rect(lx, ly, lw, lh, 0x1E1E30);
         vesa_draw_rect_outline(lx, ly, lw, lh, COLOR_WINDOW_BORDER);
@@ -140,42 +76,42 @@ void app_file_explorer(void) {
         int item_y = ly + 4;
 
         /* Geri butonu */
-        if (current_dir != -1) {
-            int bh2 = (ms.x >= lx + 4 && ms.x < lx + lw - 4 && ms.y >= item_y && ms.y < item_y + 22);
-            if (bh2) vesa_fill_rect(lx + 2, item_y, lw - 4, 22, COLOR_MENU_HOVER);
+        if (fe_dir != -1) {
+            int bh2 = (ms.x >= lx+4 && ms.x < lx+lw-4 &&
+                       ms.y >= item_y && ms.y < item_y+22);
+            if (bh2) vesa_fill_rect(lx+2, item_y, lw-4, 22, COLOR_MENU_HOVER);
             draw_back_icon(lx + 8, item_y + 3);
             vesa_draw_string(lx + 26, item_y + 3, ".. (Ust Klasor)",
                              COLOR_TEXT_GREY, bh2 ? COLOR_MENU_HOVER : 0x1E1E30);
             item_y += 26;
         }
 
-        /* Dosyalar */
-        int child_count = count_children(current_dir);
+        /* Dosyalar — VFS'ten oku */
+        int child_count = vfs_count_children(fe_dir);
         for (int idx = 0; idx < child_count && item_y < ly + lh - 4; idx++) {
-            int fi = get_child(current_dir, idx);
-            if (fi < 0) continue;
+            int fi = vfs_get_child(fe_dir, idx);
+            vfs_node_t* n = vfs_get_node(fi);
+            if (!n) continue;
 
-            int bh2 = (ms.x >= lx + 4 && ms.x < lx + lw - 4 &&
-                       ms.y >= item_y && ms.y < item_y + 22);
-            int is_sel = (fi == selected_file);
+            int bh2 = (ms.x >= lx+4 && ms.x < lx+lw-4 &&
+                       ms.y >= item_y && ms.y < item_y+22);
+            int is_sel = (fi == fe_selected);
             uint32_t row_bg = is_sel ? COLOR_ACCENT : (bh2 ? 0x2A2A44 : 0x1E1E30);
 
             vesa_fill_rect(lx + 2, item_y, lw - 4, 22, row_bg);
 
-            if (vfs[fi].is_dir)
+            if (n->type == VFS_DIRECTORY)
                 draw_folder_icon(lx + 8, item_y + 3);
             else
                 draw_file_icon(lx + 8, item_y + 3);
 
-            vesa_draw_string(lx + 26, item_y + 3, vfs[fi].name, COLOR_TEXT_WHITE, row_bg);
+            vesa_draw_string(lx + 26, item_y + 3, n->name, COLOR_TEXT_WHITE, row_bg);
 
-            if (!vfs[fi].is_dir) {
+            if (n->type == VFS_FILE) {
                 char sz[12];
-                k_itoa(vfs[fi].size, sz, 10);
+                k_itoa((int)n->size, sz, 10);
                 int sl2 = k_strlen(sz);
-                sz[sl2] = ' ';
-                sz[sl2 + 1] = 'B';
-                sz[sl2 + 2] = '\0';
+                sz[sl2] = ' '; sz[sl2+1] = 'B'; sz[sl2+2] = '\0';
                 vesa_draw_string(lx + lw - 80, item_y + 3, sz, COLOR_TEXT_GREY, row_bg);
             } else {
                 vesa_draw_string(lx + lw - 80, item_y + 3, "<DIR>", COLOR_TEXT_YELLOW, row_bg);
@@ -184,40 +120,35 @@ void app_file_explorer(void) {
             item_y += 24;
         }
 
-        /* Sag panel - onizleme */
-        if (preview_file >= 0 && !vfs[preview_file].is_dir) {
-            int rx = lx + lw + 6, ry = ly, rw = ww - lw - 26, rh = lh;
-            vesa_fill_rect(rx, ry, rw, rh, 0x1A1A2A);
-            vesa_draw_rect_outline(rx, ry, rw, rh, COLOR_WINDOW_BORDER);
-            vesa_draw_string(rx + 8, ry + 4, vfs[preview_file].name, COLOR_TEXT_YELLOW, 0x1A1A2A);
+        /* Sag panel — onizleme */
+        if (fe_preview >= 0) {
+            vfs_node_t* pn = vfs_get_node(fe_preview);
+            if (pn && pn->type == VFS_FILE) {
+                int rx = lx + lw + 6, ry = ly, rw = ww - lw - 26, rh = lh;
+                vesa_fill_rect(rx, ry, rw, rh, 0x1A1A2A);
+                vesa_draw_rect_outline(rx, ry, rw, rh, COLOR_WINDOW_BORDER);
 
-            char sz2[20];
-            k_strcpy(sz2, "Boyut: ");
-            k_itoa(vfs[preview_file].size, sz2 + 7, 10);
-            int sl3 = k_strlen(sz2);
-            sz2[sl3] = ' ';
-            sz2[sl3 + 1] = 'B';
-            sz2[sl3 + 2] = '\0';
-            vesa_draw_string(rx + 8, ry + 22, sz2, COLOR_TEXT_GREY, 0x1A1A2A);
-            vesa_fill_rect(rx + 4, ry + 38, rw - 8, 1, COLOR_WINDOW_BORDER);
+                vesa_draw_string(rx + 8, ry + 4, pn->name, COLOR_TEXT_YELLOW, 0x1A1A2A);
 
-            if (vfs[preview_file].content) {
-                const char* txt = vfs[preview_file].content;
-                int tx = rx + 8, ty = ry + 44;
-                while (*txt && ty < ry + rh - 8) {
-                    if (*txt == '\n') {
-                        tx = rx + 8;
-                        ty += 16;
-                    } else {
-                        uint32_t fc = (*txt == '[') ? COLOR_TEXT_CYAN : COLOR_TEXT_WHITE;
-                        vesa_draw_char(tx, ty, *txt, fc, 0x1A1A2A);
-                        tx += 8;
+                char sz2[20];
+                k_strcpy(sz2, "Boyut: ");
+                k_itoa((int)pn->size, sz2 + 7, 10);
+                int sl3 = k_strlen(sz2);
+                sz2[sl3] = ' '; sz2[sl3+1] = 'B'; sz2[sl3+2] = '\0';
+                vesa_draw_string(rx + 8, ry + 22, sz2, COLOR_TEXT_GREY, 0x1A1A2A);
+                vesa_fill_rect(rx + 4, ry + 38, rw - 8, 1, COLOR_WINDOW_BORDER);
+
+                /* Icerik */
+                if (pn->data && pn->size > 0) {
+                    int tx = rx + 8, ty = ry + 44;
+                    for (uint32_t ci = 0; ci < pn->size && ci < 800 && ty < ry + rh - 8; ci++) {
+                        char ch = (char)pn->data[ci];
+                        if (ch == '\n') { tx = rx + 8; ty += 16; }
+                        else if (ch >= 32 && ch < 127 && tx < rx + rw - 16) {
+                            vesa_draw_char(tx, ty, ch, COLOR_TEXT_WHITE, 0x1A1A2A);
+                            tx += 8;
+                        }
                     }
-                    if (tx > rx + rw - 16) {
-                        tx = rx + 8;
-                        ty += 16;
-                    }
-                    txt++;
                 }
             }
         }
@@ -226,8 +157,12 @@ void app_file_explorer(void) {
         vesa_fill_rect(wx, wy + wh - 20, ww, 20, COLOR_TASKBAR);
         char status[64];
         k_itoa(child_count, status, 10);
-        int stl = k_strlen(status);
-        k_strcpy(status + stl, " oge");
+        k_strcpy(status + k_strlen(status), " oge");
+        if (fe_preview >= 0) {
+            k_strcpy(status + k_strlen(status), " | Heap: ");
+            k_itoa((int)heap_get_used(), status + k_strlen(status), 10);
+            k_strcpy(status + k_strlen(status), " B");
+        }
         vesa_draw_string(wx + 8, wy + wh - 16, status, COLOR_TEXT_GREY, COLOR_TASKBAR);
         vesa_draw_string(wx + ww - 200, wy + wh - 16, "ESC=Kapat  Bksp=Geri",
                          COLOR_TEXT_GREY, COLOR_TASKBAR);
@@ -235,36 +170,40 @@ void app_file_explorer(void) {
         mouse_draw_cursor(ms.x, ms.y);
         vesa_copy_buffer();
 
+        /* --- Tiklama --- */
         if (!ms.click) continue;
 
         /* Kapat */
-        if (ms.x >= wx + ww - 24 && ms.x < wx + ww - 8 &&
-            ms.y >= wy + 8 && ms.y < wy + 24)
+        if (ms.x >= close_x && ms.x < close_x + 24 &&
+            ms.y >= close_y && ms.y < close_y + 24)
             return;
 
         /* Geri */
-        if (current_dir != -1 && ms.x >= lx + 4 && ms.x < lx + lw - 4 &&
-            ms.y >= ly + 4 && ms.y < ly + 26) {
-            current_dir = vfs[current_dir].parent;
-            selected_file = -1;
-            preview_file = -1;
+        if (fe_dir != -1 && ms.x >= lx+4 && ms.x < lx+lw-4 &&
+            ms.y >= ly+4 && ms.y < ly+26) {
+            vfs_node_t* dn = vfs_get_node(fe_dir);
+            if (dn) fe_dir = dn->parent;
+            else fe_dir = -1;
+            fe_selected = -1;
+            fe_preview = -1;
             continue;
         }
 
         /* Dosya tiklama */
-        int cy = ly + 4 + (current_dir != -1 ? 26 : 0);
+        int cy = ly + 4 + (fe_dir != -1 ? 26 : 0);
         for (int idx = 0; idx < child_count; idx++) {
-            int fi = get_child(current_dir, idx);
-            if (fi < 0) continue;
-            if (ms.x >= lx + 4 && ms.x < lx + lw - 4 &&
-                ms.y >= cy && ms.y < cy + 22) {
-                if (vfs[fi].is_dir) {
-                    current_dir = fi;
-                    selected_file = -1;
-                    preview_file = -1;
+            int fi = vfs_get_child(fe_dir, idx);
+            vfs_node_t* n = vfs_get_node(fi);
+            if (!n) continue;
+            if (ms.x >= lx+4 && ms.x < lx+lw-4 &&
+                ms.y >= cy && ms.y < cy+22) {
+                if (n->type == VFS_DIRECTORY) {
+                    fe_dir = fi;
+                    fe_selected = -1;
+                    fe_preview = -1;
                 } else {
-                    selected_file = fi;
-                    preview_file = fi;
+                    fe_selected = fi;
+                    fe_preview = fi;
                 }
                 break;
             }
@@ -274,7 +213,7 @@ void app_file_explorer(void) {
 }
 
 /* ============================================================ */
-/*                       NOT DEFTERI                             */
+/*                       NOT DEFTERI (VFS)                      */
 /* ============================================================ */
 
 #define NP_COLS 80
@@ -288,7 +227,7 @@ void app_notepad(void) {
     np_cx = 0;
     np_cy = 0;
 
-    k_strcpy(np_buf[0], "MyOS Not Defteri v0.1");
+    k_strcpy(np_buf[0], "MyOS Not Defteri v0.2");
     k_strcpy(np_buf[1], "---");
     k_strcpy(np_buf[2], "Yazmaya baslayin...");
     np_cy = 3;
@@ -311,25 +250,28 @@ void app_notepad(void) {
                 np_cy = NP_ROWS - 1;
             }
         } else if (key == '\b') {
-            if (np_cx > 0) {
-                np_cx--;
-                np_buf[np_cy][np_cx] = ' ';
-            } else if (np_cy > 0) {
-                np_cy--;
-                np_cx = k_strlen(np_buf[np_cy]);
-            }
+            if (np_cx > 0) { np_cx--; np_buf[np_cy][np_cx] = ' '; }
+            else if (np_cy > 0) { np_cy--; np_cx = k_strlen(np_buf[np_cy]); }
         } else if (key >= 32 && key < 127 && np_cx < NP_COLS - 1) {
             np_buf[np_cy][np_cx++] = (char)key;
         }
 
-        /* Cizim */
         int wx = 60, wy = 30, ww = 680, wh = 520;
         vesa_fill_screen(COLOR_BG);
         vesa_fill_rect(wx, wy, ww, wh, 0x1E1E2E);
         vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
         vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
         vesa_draw_string(wx + 16, wy + 8, "Not Defteri", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
-        draw_close_button(wx + ww - 24, wy + 8, COLOR_CLOSE_BTN);
+
+        int clx = wx + ww - 28, cly = wy + 4;
+        int clh = (ms.x >= clx && ms.x < clx+24 && ms.y >= cly && ms.y < cly+24);
+        vesa_fill_rect(clx, cly, 24, 24, clh ? 0xFF2233 : COLOR_CLOSE_BTN);
+        for (int i = 0; i < 8; i++) {
+            vesa_putpixel(clx+4+i, cly+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx+5+i, cly+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx+11-i, cly+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx+12-i, cly+4+i, COLOR_TEXT_WHITE);
+        }
 
         vesa_fill_rect(wx + 8, wy + 38, ww - 16, wh - 56, 0x0C0C0C);
         vesa_draw_rect_outline(wx + 8, wy + 38, ww - 16, wh - 56, COLOR_WINDOW_BORDER);
@@ -348,16 +290,14 @@ void app_notepad(void) {
         char pos[32];
         k_strcpy(pos, "Satir:");
         k_itoa(np_cy + 1, pos + 6, 10);
-        int pl = k_strlen(pos);
-        k_strcpy(pos + pl, " Sutun:");
+        k_strcpy(pos + k_strlen(pos), " Sutun:");
         k_itoa(np_cx + 1, pos + k_strlen(pos), 10);
         vesa_draw_string(wx + 8, wy + wh - 15, pos, COLOR_TEXT_GREY, COLOR_TASKBAR);
 
         mouse_draw_cursor(ms.x, ms.y);
         vesa_copy_buffer();
 
-        if (ms.click && ms.x >= wx + ww - 24 && ms.x < wx + ww - 8 &&
-            ms.y >= wy + 8 && ms.y < wy + 24)
+        if (ms.click && ms.x >= clx && ms.x < clx+24 && ms.y >= cly && ms.y < cly+24)
             return;
     }
 }
@@ -390,64 +330,56 @@ void app_calculator(void) {
 
         if (key >= '0' && key <= '9') {
             int d = key - '0';
-            if (has_result) {
-                num1 = 0; num2 = 0; op = 0; has_result = 0; entering = 0;
-            }
-            if (!entering) {
-                num1 = num1 * 10 + d;
-                k_itoa(num1, display, 10);
-            } else {
-                num2 = num2 * 10 + d;
-                k_itoa(num2, display, 10);
-            }
+            if (has_result) { num1=0; num2=0; op=0; has_result=0; entering=0; }
+            if (!entering) { num1 = num1*10+d; k_itoa(num1, display, 10); }
+            else { num2 = num2*10+d; k_itoa(num2, display, 10); }
         }
-        if (key == '+' || key == '-' || key == '*' || key == '/') {
-            op = (char)key;
-            entering = 1;
-            num2 = 0;
+        if (key=='+' || key=='-' || key=='*' || key=='/') {
+            op = (char)key; entering = 1; num2 = 0;
         }
         if (key == '\n' || key == '=') {
-            if (op == '+') result = num1 + num2;
-            else if (op == '-') result = num1 - num2;
-            else if (op == '*') result = num1 * num2;
-            else if (op == '/' && num2 != 0) result = num1 / num2;
-            else result = num1;
+            if (op=='+') result=num1+num2;
+            else if (op=='-') result=num1-num2;
+            else if (op=='*') result=num1*num2;
+            else if (op=='/' && num2!=0) result=num1/num2;
+            else result=num1;
             k_itoa(result, display, 10);
-            num1 = result;
-            has_result = 1;
-            entering = 0;
+            num1=result; has_result=1; entering=0;
         }
 
-        int wx = 260, wy = 100, ww = 280, wh = 380;
+        int wx=260, wy=100, ww=280, wh=380;
         vesa_fill_screen(COLOR_BG);
         vesa_fill_rect(wx, wy, ww, wh, COLOR_WINDOW_BG);
         vesa_fill_rect(wx, wy, ww, 32, COLOR_WINDOW_TITLE);
         vesa_draw_rect_outline(wx, wy, ww, wh, COLOR_WINDOW_BORDER);
         vesa_draw_string(wx + 16, wy + 8, "Hesap Makinesi", COLOR_TEXT_WHITE, COLOR_WINDOW_TITLE);
-        draw_close_button(wx + ww - 24, wy + 8, COLOR_CLOSE_BTN);
 
-        /* Ekran */
-        vesa_fill_rect(wx + 15, wy + 40, ww - 30, 50, 0x0C0C0C);
-        vesa_draw_rect_outline(wx + 15, wy + 40, ww - 30, 50, COLOR_WINDOW_BORDER);
-        int dlen = k_strlen(display);
-        vesa_draw_string(wx + ww - 25 - dlen * 8, wy + 58, display, COLOR_TEXT_GREEN, 0x0C0C0C);
-        if (op) {
-            char os[2] = {op, 0};
-            vesa_draw_string(wx + 20, wy + 45, os, COLOR_TEXT_YELLOW, 0x0C0C0C);
+        int clx2 = wx+ww-28, cly2 = wy+4;
+        int clh2 = (ms.x>=clx2 && ms.x<clx2+24 && ms.y>=cly2 && ms.y<cly2+24);
+        vesa_fill_rect(clx2, cly2, 24, 24, clh2 ? 0xFF2233 : COLOR_CLOSE_BTN);
+        for (int i = 0; i < 8; i++) {
+            vesa_putpixel(clx2+4+i, cly2+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx2+5+i, cly2+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx2+11-i, cly2+4+i, COLOR_TEXT_WHITE);
+            vesa_putpixel(clx2+12-i, cly2+4+i, COLOR_TEXT_WHITE);
         }
 
+        vesa_fill_rect(wx+15, wy+40, ww-30, 50, 0x0C0C0C);
+        vesa_draw_rect_outline(wx+15, wy+40, ww-30, 50, COLOR_WINDOW_BORDER);
+        int dlen = k_strlen(display);
+        vesa_draw_string(wx+ww-25-dlen*8, wy+58, display, COLOR_TEXT_GREEN, 0x0C0C0C);
+        if (op) { char os[2]={op,0}; vesa_draw_string(wx+20, wy+45, os, COLOR_TEXT_YELLOW, 0x0C0C0C); }
+
         for (int i = 0; i < 16; i++) {
-            int bx = wx + 15 + (i % 4) * 63;
-            int by = wy + 100 + (i / 4) * 63;
+            int bx = wx+15+(i%4)*63, by = wy+100+(i/4)*63;
             int bw = 58, bh = 55;
-            int hov = (ms.x >= bx && ms.x < bx + bw && ms.y >= by && ms.y < by + bh);
-            int is_op = (i % 4 == 3 || i == 14);
-            uint32_t bg = is_op ? (hov ? COLOR_START_HOVER : COLOR_ACCENT) :
-                                  (hov ? COLOR_BUTTON_HOVER : COLOR_BUTTON);
+            int hov = (ms.x>=bx && ms.x<bx+bw && ms.y>=by && ms.y<by+bh);
+            int is_op = (i%4==3 || i==14);
+            uint32_t bg = is_op ? (hov?COLOR_START_HOVER:COLOR_ACCENT) : (hov?COLOR_BUTTON_HOVER:COLOR_BUTTON);
             vesa_fill_rect(bx, by, bw, bh, bg);
             vesa_draw_rect_outline(bx, by, bw, bh, COLOR_WINDOW_BORDER);
             int tw = k_strlen(buttons[i]) * 8;
-            vesa_draw_string(bx + (bw - tw) / 2, by + 20, buttons[i], COLOR_TEXT_WHITE, bg);
+            vesa_draw_string(bx+(bw-tw)/2, by+20, buttons[i], COLOR_TEXT_WHITE, bg);
         }
 
         mouse_draw_cursor(ms.x, ms.y);
@@ -455,45 +387,29 @@ void app_calculator(void) {
 
         if (!ms.click) continue;
 
-        if (ms.x >= wx + ww - 24 && ms.x < wx + ww - 8 &&
-            ms.y >= wy + 8 && ms.y < wy + 24)
-            return;
+        if (ms.x >= clx2 && ms.x < clx2+24 && ms.y >= cly2 && ms.y < cly2+24) return;
 
         for (int i = 0; i < 16; i++) {
-            int bx = wx + 15 + (i % 4) * 63;
-            int by = wy + 100 + (i / 4) * 63;
-            if (ms.x >= bx && ms.x < bx + 58 && ms.y >= by && ms.y < by + 55) {
+            int bx = wx+15+(i%4)*63, by = wy+100+(i/4)*63;
+            if (ms.x>=bx && ms.x<bx+58 && ms.y>=by && ms.y<by+55) {
                 const char* b = buttons[i];
-                if (b[0] >= '0' && b[0] <= '9') {
-                    int d = b[0] - '0';
-                    if (has_result) {
-                        num1 = 0; num2 = 0; op = 0; has_result = 0; entering = 0;
-                    }
-                    if (!entering) {
-                        num1 = num1 * 10 + d;
-                        k_itoa(num1, display, 10);
-                    } else {
-                        num2 = num2 * 10 + d;
-                        k_itoa(num2, display, 10);
-                    }
-                } else if (b[0] == 'C') {
-                    num1 = 0; num2 = 0; result = 0; op = 0;
-                    entering = 0; has_result = 0;
-                    k_strcpy(display, "0");
-                } else if (b[0] == '=') {
-                    if (op == '+') result = num1 + num2;
-                    else if (op == '-') result = num1 - num2;
-                    else if (op == '*') result = num1 * num2;
-                    else if (op == '/' && num2) result = num1 / num2;
-                    else result = num1;
-                    k_itoa(result, display, 10);
-                    num1 = result;
-                    has_result = 1;
-                    entering = 0;
+                if (b[0]>='0' && b[0]<='9') {
+                    int d = b[0]-'0';
+                    if (has_result) { num1=0; num2=0; op=0; has_result=0; entering=0; }
+                    if (!entering) { num1=num1*10+d; k_itoa(num1,display,10); }
+                    else { num2=num2*10+d; k_itoa(num2,display,10); }
+                } else if (b[0]=='C') {
+                    num1=0; num2=0; result=0; op=0; entering=0; has_result=0;
+                    k_strcpy(display,"0");
+                } else if (b[0]=='=') {
+                    if (op=='+') result=num1+num2;
+                    else if (op=='-') result=num1-num2;
+                    else if (op=='*') result=num1*num2;
+                    else if (op=='/' && num2) result=num1/num2;
+                    else result=num1;
+                    k_itoa(result,display,10); num1=result; has_result=1; entering=0;
                 } else {
-                    op = b[0];
-                    entering = 1;
-                    num2 = 0;
+                    op=b[0]; entering=1; num2=0;
                 }
                 break;
             }
