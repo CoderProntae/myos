@@ -11,6 +11,7 @@
 #include "heap.h"
 #include "vfs.h"
 #include "elf.h"
+#include "syscall.h"
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     (void)magic;
@@ -21,6 +22,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     vfs_init();
     elf_init();
+    syscall_init();
     vesa_init(mbi);
     mouse_init();
     pci_init();
