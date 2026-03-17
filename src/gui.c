@@ -15,6 +15,7 @@
 #include "heap.h"
 #include "vfs.h"
 #include "elf.h"
+#include "syscall.h"
 
 static int start_open=0, window_open=0;
 static int settings_selected_depth=32, current_hz=60, selected_hz=60;
@@ -152,6 +153,7 @@ static int gt_process(void) {
         gt_puts_c("  rm", 2);       gt_puts_c("        - Dosya/klasor sil\n", 0);
         gt_puts_c("  run", 2);      gt_puts_c("       - Program calistir\n", 0);
         gt_puts_c("  elfinfo", 2);  gt_puts_c("   - ELF bilgisi\n", 0);
+        gt_puts_c("  syscall", 2);  gt_puts_c("   - Syscall testi\n", 0);
         gt_puts_c("  exit", 2);      gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);    gt_puts_c("    - Yeniden baslat\n", 0);
         gt_puts_c("  shutdown", 2);  gt_puts_c("  - Sistemi kapat\n", 0);
@@ -894,6 +896,102 @@ static int gt_process(void) {
         gt_puts_c("  Program alani: 1 MB\n", 0);
         gt_puts_c("  Kullanim: run <dosya_yolu>\n", 0);
         gt_puts_c("  Ornek  : run bin/hello\n", 0);
+        return 0;
+    }
+
+    if (!k_strcmp(c, "syscall")) {
+        gt_puts_c("  Syscall Testi:\n", 3);
+        gt_puts_c("  ---\n", 0);
+
+        /* Test 1: SYS_MEMINFO */
+        syscall_result_t r1 = syscall_handle(SYS_MEMINFO, 0, 0, 0, 0);
+        gt_puts_c("  SYS_MEMINFO(total): ", 0);
+        char b3[20];
+        k_itoa((int)(r1.retval / 1024), b3, 10);
+        gt_puts_c(b3, 1);
+        gt_puts_c(" KB\n", 0);
+
+        syscall_result_t r2 = syscall_handle(SYS_MEMINFO, 1, 0, 0, 0);
+        gt_puts_c("  SYS_MEMINFO(used) : ", 0);
+        k_itoa(r2.retval, b3, 10);
+        gt_puts_c(b3, 3);
+        gt_puts_c(" byte\n", 0);
+
+        /* Test 2: SYS_MALLOC + SYS_FREE */
+        syscall_result_t r3 = syscall_handle(SYS_MALLOC, 512, 0, 0, 0);
+        if (r3.retval) {
+            gt_puts_c("  SYS_MALLOC(512)   : OK\n", 1);
+
+            syscall_result_t r4 = syscall_handle(SYS_MEMINFO, 1, 0, 0, 0);
+            gt_puts_c("  Kullanim artti    : ", 0);
+            k_itoa(r4.retval, b3, 10);
+            gt_puts_c(b3, 3);
+            gt_puts_c(" byte\n", 0);
+
+            syscall_handle(SYS_FREE, (uint32_t)r3.retval, 0, 0, 0);
+            gt_puts_c("  SYS_FREE          : OK\n", 1);
+
+            syscall_result_t r5 = syscall_handle(SYS_MEMINFO, 1, 0, 0, 0);
+            gt_puts_c("  Kullanim sonra    : ", 0);
+            k_itoa(r5.retval, b3, 10);
+            gt_puts_c(b3, 1);
+            gt_puts_c(" byte\n", 0);
+        } else {
+            gt_puts_c("  SYS_MALLOC        : BASARISIZ\n", 4);
+        }
+
+        /* Test 3: SYS_OPEN */
+        syscall_result_t r6 = syscall_handle(SYS_OPEN,
+            (uint32_t)"home/readme.txt", 0, 0, 0);
+        gt_puts_c("  SYS_OPEN(readme)  : ", 0);
+        if (r6.retval >= 0) {
+            gt_puts_c("node=", 1);
+            k_itoa(r6.retval, b3, 10);
+            gt_puts_c(b3, 1);
+            gt_putc('\n');
+        } else {
+            gt_puts_c("BASARISIZ\n", 4);
+        }
+
+        /* Test 4: SYS_TIME */
+        syscall_result_t r7 = syscall_handle(SYS_TIME, 0, 0, 0, 0);
+        int secs = r7.retval;
+        int hh = secs / 3600;
+        int mm = (secs % 3600) / 60;
+        int ss = secs % 60;
+        gt_puts_c("  SYS_TIME          : ", 0);
+        char tb[12];
+        tb[0]='0'+hh/10; tb[1]='0'+hh%10; tb[2]=':';
+        tb[3]='0'+mm/10; tb[4]='0'+mm%10; tb[5]=':';
+        tb[6]='0'+ss/10; tb[7]='0'+ss%10; tb[8]=0;
+        gt_puts_c(tb, 2);
+        gt_putc('\n');
+
+        /* Test 5: SYS_SCREEN */
+        syscall_result_t rw = syscall_handle(SYS_SCREEN_W, 0, 0, 0, 0);
+        syscall_result_t rh = syscall_handle(SYS_SCREEN_H, 0, 0, 0, 0);
+        gt_puts_c("  SYS_SCREEN        : ", 0);
+        k_itoa(rw.retval, b3, 10);
+        gt_puts_c(b3, 2);
+        gt_puts_c("x", 0);
+        k_itoa(rh.retval, b3, 10);
+        gt_puts_c(b3, 2);
+        gt_putc('\n');
+
+        /* Test 6: SYS_STRLEN */
+        syscall_result_t r8 = syscall_handle(SYS_STRLEN,
+            (uint32_t)"Hello MyOS", 0, 0, 0);
+        gt_puts_c("  SYS_STRLEN        : ", 0);
+        k_itoa(r8.retval, b3, 10);
+        gt_puts_c(b3, 1);
+        gt_putc('\n');
+
+        gt_puts_c("  ---\n", 0);
+        gt_puts_c("  Toplam syscall: ", 0);
+        k_itoa(SYS_MAX, b3, 10);
+        gt_puts_c(b3, 2);
+        gt_puts_c(" tanimli\n", 0);
+        gt_puts_c("  SYSCALL TESTI BASARILI!\n", 1);
         return 0;
     }
     
