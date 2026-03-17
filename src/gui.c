@@ -12,6 +12,7 @@
 #include "net.h"
 #include "dns.h"
 #include "tcp.h"
+#include "heap.h"
 
 static int start_open=0, window_open=0;
 static int settings_selected_depth=32, current_hz=60, selected_hz=60;
@@ -139,6 +140,8 @@ static int gt_process(void) {
         gt_puts_c("  tcptest", 2);   gt_puts_c("   - TCP baglanti testi\n", 0);
         gt_puts_c("  ping", 2);      gt_puts_c("      - Gateway'e ping\n", 0);
         gt_puts_c("  nslookup", 2);  gt_puts_c("  - DNS cozumle\n", 0);
+        gt_puts_c("  meminfo", 2);   gt_puts_c("   - Bellek bilgisi\n", 0);
+        gt_puts_c("  memtest", 2);   gt_puts_c("   - Bellek testi\n", 0);
         gt_puts_c("  exit", 2);      gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);    gt_puts_c("    - Yeniden baslat\n", 0);
         gt_puts_c("  shutdown", 2);  gt_puts_c("  - Sistemi kapat\n", 0);
@@ -451,6 +454,95 @@ static int gt_process(void) {
         gt_puts_c("  ", 0); gt_puts_c(c+5, 5); gt_putc('\n');
         return 0;
     }
+
+    if (!k_strcmp(c, "meminfo")) {
+        gt_puts_c("  Bellek Bilgisi:\n", 3);
+        char buf[20];
+
+        gt_puts_c("  Toplam : ", 0);
+        k_itoa((int)(heap_get_total() / 1024), buf, 10);
+        gt_puts_c(buf, 1);
+        gt_puts_c(" KB\n", 0);
+
+        gt_puts_c("  Kullan.: ", 0);
+        k_itoa((int)(heap_get_used() / 1024), buf, 10);
+        gt_puts_c(buf, 3);
+        gt_puts_c(" KB\n", 0);
+
+        gt_puts_c("  Bos    : ", 0);
+        k_itoa((int)(heap_get_free() / 1024), buf, 10);
+        gt_puts_c(buf, 1);
+        gt_puts_c(" KB\n", 0);
+
+        gt_puts_c("  Bloklar: ", 0);
+        k_itoa((int)heap_get_block_count(), buf, 10);
+        gt_puts_c(buf, 2);
+        gt_putc('\n');
+        return 0;
+    }
+
+    if (!k_strcmp(c, "memtest")) {
+        gt_puts_c("  Bellek testi basliyor...\n", 3);
+
+        /* Test 1: Ayirma */
+        void* p1 = kmalloc(1024);
+        void* p2 = kmalloc(2048);
+        void* p3 = kmalloc(4096);
+
+        if (p1 && p2 && p3) {
+            gt_puts_c("  [OK] 3 blok ayrildi (1K+2K+4K)\n", 1);
+        } else {
+            gt_puts_c("  [FAIL] Ayirma basarisiz!\n", 4);
+            return 0;
+        }
+
+        /* Test 2: Yazma/okuma */
+        uint8_t* test = (uint8_t*)p1;
+        for (int i = 0; i < 1024; i++) test[i] = (uint8_t)(i & 0xFF);
+        int ok = 1;
+        for (int i = 0; i < 1024; i++) {
+            if (test[i] != (uint8_t)(i & 0xFF)) { ok = 0; break; }
+        }
+        if (ok) {
+            gt_puts_c("  [OK] Yazma/okuma testi basarili\n", 1);
+        } else {
+            gt_puts_c("  [FAIL] Veri bozulmasi!\n", 4);
+        }
+
+        /* Test 3: Serbest birakma */
+        char buf2[20];
+        gt_puts_c("  Kullanilan: ", 0);
+        k_itoa((int)(heap_get_used() / 1024), buf2, 10);
+        gt_puts_c(buf2, 3);
+        gt_puts_c(" KB\n", 0);
+
+        kfree(p2);
+        gt_puts_c("  [OK] p2 serbest birakildi\n", 1);
+
+        kfree(p1);
+        gt_puts_c("  [OK] p1 serbest birakildi\n", 1);
+
+        kfree(p3);
+        gt_puts_c("  [OK] p3 serbest birakildi\n", 1);
+
+        gt_puts_c("  Kullanilan: ", 0);
+        k_itoa((int)(heap_get_used() / 1024), buf2, 10);
+        gt_puts_c(buf2, 1);
+        gt_puts_c(" KB\n", 0);
+
+        gt_puts_c("  Bloklar: ", 0);
+        k_itoa((int)heap_get_block_count(), buf2, 10);
+        gt_puts_c(buf2, 2);
+        gt_putc('\n');
+
+        if (heap_get_used() == 0) {
+            gt_puts_c("  BELLEK TESTI BASARILI!\n", 1);
+        } else {
+            gt_puts_c("  UYARI: Bellek sizintisi!\n", 4);
+        }
+        return 0;
+    }
+    
     if (!k_strcmp(c, "reboot")) { outb(0x64, 0xFE); return 0; }
 
     gt_puts_c("  Bilinmeyen: ", 4);
