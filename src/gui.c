@@ -14,6 +14,7 @@
 #include "tcp.h"
 #include "heap.h"
 #include "vfs.h"
+#include "elf.h"
 
 static int start_open=0, window_open=0;
 static int settings_selected_depth=32, current_hz=60, selected_hz=60;
@@ -149,6 +150,8 @@ static int gt_process(void) {
         gt_puts_c("  mkdir", 2);    gt_puts_c("     - Klasor olustur\n", 0);
         gt_puts_c("  write", 2);    gt_puts_c("     - Dosyaya yaz\n", 0);
         gt_puts_c("  rm", 2);       gt_puts_c("        - Dosya/klasor sil\n", 0);
+        gt_puts_c("  run", 2);      gt_puts_c("       - Program calistir\n", 0);
+        gt_puts_c("  elfinfo", 2);  gt_puts_c("   - ELF bilgisi\n", 0);
         gt_puts_c("  exit", 2);      gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);    gt_puts_c("    - Yeniden baslat\n", 0);
         gt_puts_c("  shutdown", 2);  gt_puts_c("  - Sistemi kapat\n", 0);
@@ -802,6 +805,95 @@ static int gt_process(void) {
         } else {
             gt_puts_c("  Silinemedi!\n", 4);
         }
+        return 0;
+    }
+
+    if (!k_strncmp(c, "run ", 4)) {
+        const char* path = c + 4;
+        while (*path == ' ') path++;
+
+        if (k_strlen(path) == 0) {
+            gt_puts_c("  Kullanim: run dosya_yolu\n", 3);
+            return 0;
+        }
+
+        gt_puts_c("  Yukleniyor: ", 0);
+        gt_puts_c(path, 2);
+        gt_putc('\n');
+
+        int node = vfs_find_path(path);
+        if (node < 0) {
+            gt_puts_c("  Dosya bulunamadi!\n", 4);
+            return 0;
+        }
+
+        vfs_node_t* n = vfs_get_node(node);
+        if (!n || !n->data) {
+            gt_puts_c("  Dosya okunamadi!\n", 4);
+            return 0;
+        }
+
+        /* Format kontrol */
+        if (n->size >= 4) {
+            uint32_t magic2 = *(uint32_t*)n->data;
+            if (magic2 == 0x464C457F) {
+                gt_puts_c("  Format: ELF32\n", 2);
+            } else if (magic2 == 0x4D594F53) {
+                gt_puts_c("  Format: MyOS Program\n", 2);
+            } else {
+                gt_puts_c("  HATA: Bilinmeyen dosya formati!\n", 4);
+                gt_puts_c("  ELF veya MYOS program olmali.\n", 0);
+                return 0;
+            }
+        }
+
+        gt_puts_c("  Calistiriliyor...\n", 3);
+        gt_render();
+
+        int ret = elf_load_from_vfs(path);
+
+        if (ret >= 0) {
+            gt_puts_c("  Program tamamlandi. Cikis kodu: ", 1);
+            char rc[12];
+            k_itoa(ret, rc, 10);
+            gt_puts_c(rc, 1);
+            gt_putc('\n');
+        } else {
+            gt_puts_c("  Program HATASI! Kod: ", 4);
+            char rc2[12];
+            k_itoa(ret, rc2, 10);
+            gt_puts_c(rc2, 4);
+            gt_putc('\n');
+
+            /* Hata aciklamasi */
+            const char* err_msg;
+            switch (ret) {
+                case -2:  err_msg = "ELF magic gecersiz"; break;
+                case -3:  err_msg = "64-bit desteklenmiyor"; break;
+                case -5:  err_msg = "Yanlis mimari (i386 olmali)"; break;
+                case -6:  err_msg = "Executable degil"; break;
+                case -10: err_msg = "Program cok buyuk"; break;
+                case -20: err_msg = "Dosya bulunamadi"; break;
+                case -21: err_msg = "Dosya degil"; break;
+                case -22: err_msg = "Dosya bos"; break;
+                case -23: err_msg = "Bilinmeyen format"; break;
+                default:  err_msg = "Bilinmeyen hata"; break;
+            }
+            gt_puts_c("  Sebep: ", 0);
+            gt_puts_c(err_msg, 0);
+            gt_putc('\n');
+        }
+        return 0;
+    }
+
+    if (!k_strcmp(c, "elfinfo")) {
+        gt_puts_c("  ELF/Program Yukleme Bilgisi:\n", 3);
+        gt_puts_c("  Desteklenen formatlar:\n", 0);
+        gt_puts_c("    - ELF32 i386 executable\n", 2);
+        gt_puts_c("    - MyOS program (MYOS magic)\n", 2);
+        gt_puts_c("  Program alani: 1 MB\n", 0);
+        gt_puts_c("  Kullanim: run <dosya_yolu>\n", 0);
+        gt_puts_c("  Ornek  : run bin/hello\n", 0);
         return 0;
     }
     
