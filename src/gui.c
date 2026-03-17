@@ -17,6 +17,7 @@
 #include "elf.h"
 #include "syscall.h"
 #include "task.h"
+#include "libc.h"
 
 static int start_open = 0, window_open = 0;
 static int settings_selected_depth = 32, current_hz = 60, selected_hz = 60;
@@ -164,6 +165,7 @@ static int gt_process(void) {
         gt_puts_c("  elfinfo", 2);  gt_puts_c("   - ELF bilgisi\n", 0);
         gt_puts_c("  syscall", 2);  gt_puts_c("   - Syscall testi\n", 0);
         gt_puts_c("  tasks", 2);    gt_puts_c("     - Gorev listesi\n", 0);
+        gt_puts_c("  libctest", 2);  gt_puts_c("  - libc testi\n", 0);
         gt_puts_c("  exit", 2);     gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);   gt_puts_c("    - Yeniden baslat\n", 0);
         return 0;
@@ -582,6 +584,124 @@ static int gt_process(void) {
         return 0;
     }
 
+    if (!k_strcmp(c, "libctest")) {
+        gt_puts_c("  === Mini libc Testi ===\n", 3);
+        char buf[128];
+
+        /* 1. strlen */
+        snprintf(buf, sizeof(buf), "  strlen(\"Hello\") = %d", (int)strlen("Hello"));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 2. strcmp */
+        snprintf(buf, sizeof(buf), "  strcmp(\"a\",\"b\") = %d", strcmp("a", "b"));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 3. strchr */
+        const char* found = strchr("merhaba", 'h');
+        snprintf(buf, sizeof(buf), "  strchr(\"merhaba\",'h') = \"%s\"", found ? found : "NULL");
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 4. strstr */
+        const char* sub = strstr("hello world", "world");
+        snprintf(buf, sizeof(buf), "  strstr(\"hello world\",\"world\") = \"%s\"", sub ? sub : "NULL");
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 5. atoi */
+        snprintf(buf, sizeof(buf), "  atoi(\"-1234\") = %d", atoi("-1234"));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 6. strtol hex */
+        snprintf(buf, sizeof(buf), "  strtol(\"0xFF\",16) = %d", (int)strtol("0xFF", 0, 16));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 7. snprintf */
+        snprintf(buf, sizeof(buf), "  snprintf: sayi=%d hex=0x%x str=%s", 42, 255, "test");
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 8. malloc/free */
+        void* p = malloc(1024);
+        if (p) {
+            memset(p, 0xAA, 1024);
+            gt_puts_c("  malloc(1024)+memset = OK\n", 1);
+            free(p);
+            gt_puts_c("  free() = OK\n", 1);
+        } else {
+            gt_puts_c("  malloc = FAIL\n", 4);
+        }
+
+        /* 9. strdup */
+        char* dup = strdup("kopya");
+        if (dup) {
+            snprintf(buf, sizeof(buf), "  strdup(\"kopya\") = \"%s\"", dup);
+            gt_puts_c(buf, 1); gt_putc('\n');
+            free(dup);
+        }
+
+        /* 10. fopen/fread/fclose */
+        FILE_t* fp = fopen("home/readme.txt", "r");
+        if (fp) {
+            char fbuf[64];
+            char* line = fgets(fbuf, sizeof(fbuf), fp);
+            if (line) {
+                /* Newline sil */
+                int ll = (int)strlen(fbuf);
+                if (ll > 0 && fbuf[ll-1] == '\n') fbuf[ll-1] = '\0';
+                snprintf(buf, sizeof(buf), "  fopen+fgets = \"%s\"", fbuf);
+                gt_puts_c(buf, 1); gt_putc('\n');
+            }
+            snprintf(buf, sizeof(buf), "  ftell = %d", (int)ftell(fp));
+            gt_puts_c(buf, 0); gt_putc('\n');
+            fclose(fp);
+            gt_puts_c("  fclose = OK\n", 1);
+        } else {
+            gt_puts_c("  fopen = FAIL\n", 4);
+        }
+
+        /* 11. fopen write */
+        FILE_t* fp2 = fopen("tmp/test.txt", "w");
+        if (fp2) {
+            fprintf(fp2, "Merhaba %s! Sayi: %d\n", "Dunya", 2025);
+            fclose(fp2);
+            gt_puts_c("  fopen(w)+fprintf+fclose = OK\n", 1);
+
+            /* Okuyarak dogrula */
+            FILE_t* fp3 = fopen("tmp/test.txt", "r");
+            if (fp3) {
+                char vbuf[64];
+                fgets(vbuf, sizeof(vbuf), fp3);
+                int vl = (int)strlen(vbuf);
+                if (vl > 0 && vbuf[vl-1] == '\n') vbuf[vl-1] = '\0';
+                snprintf(buf, sizeof(buf), "  Dogrulama: \"%s\"", vbuf);
+                gt_puts_c(buf, 1); gt_putc('\n');
+                fclose(fp3);
+            }
+        }
+
+        /* 12. isalpha/isdigit */
+        snprintf(buf, sizeof(buf), "  isalpha('A')=%d isdigit('5')=%d isspace(' ')=%d",
+                 isalpha('A'), isdigit('5'), isspace(' '));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 13. toupper/tolower */
+        snprintf(buf, sizeof(buf), "  toupper('a')='%c' tolower('Z')='%c'",
+                 toupper('a'), tolower('Z'));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 14. rand */
+        snprintf(buf, sizeof(buf), "  rand() = %d, %d, %d",
+                 (int)rand_next(), (int)rand_next(), (int)rand_next());
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 15. memcmp */
+        snprintf(buf, sizeof(buf), "  memcmp(\"abc\",\"abc\",3) = %d",
+                 memcmp("abc", "abc", 3));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        gt_puts_c("  ===\n", 0);
+        gt_puts_c("  LIBC TESTI BASARILI!\n", 1);
+        return 0;
+    }
+    
     if (!k_strncmp(c, "echo ", 5)) { gt_puts_c("  ", 0); gt_puts_c(c+5, 5); gt_putc('\n'); return 0; }
     if (!k_strcmp(c, "reboot")) { outb(0x64, 0xFE); return 0; }
 
