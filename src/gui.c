@@ -13,6 +13,7 @@
 #include "dns.h"
 #include "tcp.h"
 #include "heap.h"
+#include "vfs.h"
 
 static int start_open=0, window_open=0;
 static int settings_selected_depth=32, current_hz=60, selected_hz=60;
@@ -142,6 +143,12 @@ static int gt_process(void) {
         gt_puts_c("  nslookup", 2);  gt_puts_c("  - DNS cozumle\n", 0);
         gt_puts_c("  meminfo", 2);   gt_puts_c("   - Bellek bilgisi\n", 0);
         gt_puts_c("  memtest", 2);   gt_puts_c("   - Bellek testi\n", 0);
+        gt_puts_c("  ls", 2);       gt_puts_c("        - Dosya listele\n", 0);
+        gt_puts_c("  cat", 2);      gt_puts_c("       - Dosya oku\n", 0);
+        gt_puts_c("  touch", 2);    gt_puts_c("     - Bos dosya olustur\n", 0);
+        gt_puts_c("  mkdir", 2);    gt_puts_c("     - Klasor olustur\n", 0);
+        gt_puts_c("  write", 2);    gt_puts_c("     - Dosyaya yaz\n", 0);
+        gt_puts_c("  rm", 2);       gt_puts_c("        - Dosya/klasor sil\n", 0);
         gt_puts_c("  exit", 2);      gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);    gt_puts_c("    - Yeniden baslat\n", 0);
         gt_puts_c("  shutdown", 2);  gt_puts_c("  - Sistemi kapat\n", 0);
@@ -560,6 +567,205 @@ static int gt_process(void) {
             gt_puts_c("  BELLEK TESTI BASARILI!\n", 1);
         } else {
             gt_puts_c("  UYARI: Bellek sizintisi!\n", 4);
+        }
+        return 0;
+    }
+
+    if (!k_strcmp(c, "ls")) {
+        int dir = -1; /* root */
+        int count = vfs_count_children(dir);
+        gt_puts_c("  /\n", 3);
+        for (int i = 0; i < count; i++) {
+            int idx = vfs_get_child(dir, i);
+            vfs_node_t* n = vfs_get_node(idx);
+            if (!n) continue;
+            gt_puts_c("  ", 0);
+            if (n->type == VFS_DIRECTORY) {
+                gt_puts_c(n->name, 6);
+                gt_puts_c("/", 6);
+            } else {
+                gt_puts_c(n->name, 5);
+            }
+            gt_puts_c("  ", 0);
+            if (n->type == VFS_FILE) {
+                char sz[12];
+                k_itoa((int)n->size, sz, 10);
+                gt_puts_c(sz, 0);
+                gt_puts_c(" B", 0);
+            } else {
+                gt_puts_c("<DIR>", 3);
+            }
+            gt_putc('\n');
+        }
+        return 0;
+    }
+
+    if (!k_strncmp(c, "ls ", 3)) {
+        const char* path = c + 3;
+        while (*path == ' ') path++;
+        int dir = vfs_find_path(path);
+        if (dir < 0) {
+            gt_puts_c("  Klasor bulunamadi: ", 4);
+            gt_puts_c(path, 5);
+            gt_putc('\n');
+            return 0;
+        }
+        vfs_node_t* dn = vfs_get_node(dir);
+        if (!dn || dn->type != VFS_DIRECTORY) {
+            gt_puts_c("  Bu bir klasor degil\n", 4);
+            return 0;
+        }
+        char dp[VFS_MAX_PATH];
+        vfs_build_path(dir, dp);
+        gt_puts_c("  ", 0);
+        gt_puts_c(dp, 3);
+        gt_putc('\n');
+        int count = vfs_count_children(dir);
+        for (int i = 0; i < count; i++) {
+            int idx = vfs_get_child(dir, i);
+            vfs_node_t* n = vfs_get_node(idx);
+            if (!n) continue;
+            gt_puts_c("  ", 0);
+            if (n->type == VFS_DIRECTORY) {
+                gt_puts_c(n->name, 6);
+                gt_puts_c("/", 6);
+            } else {
+                gt_puts_c(n->name, 5);
+            }
+            gt_puts_c("  ", 0);
+            if (n->type == VFS_FILE) {
+                char sz[12];
+                k_itoa((int)n->size, sz, 10);
+                gt_puts_c(sz, 0);
+                gt_puts_c(" B", 0);
+            } else {
+                gt_puts_c("<DIR>", 3);
+            }
+            gt_putc('\n');
+        }
+        return 0;
+    }
+
+    if (!k_strncmp(c, "cat ", 4)) {
+        const char* path = c + 4;
+        while (*path == ' ') path++;
+        int node = vfs_find_path(path);
+        if (node < 0) {
+            gt_puts_c("  Dosya bulunamadi: ", 4);
+            gt_puts_c(path, 5);
+            gt_putc('\n');
+            return 0;
+        }
+        vfs_node_t* n = vfs_get_node(node);
+        if (!n || n->type != VFS_FILE) {
+            gt_puts_c("  Bu bir dosya degil\n", 4);
+            return 0;
+        }
+        if (!n->data || n->size == 0) {
+            gt_puts_c("  (bos dosya)\n", 0);
+            return 0;
+        }
+        gt_setcolor(0);
+        for (uint32_t i = 0; i < n->size && i < 1024; i++) {
+            char ch = (char)n->data[i];
+            if (ch == '\n') gt_putc('\n');
+            else if (ch >= 32 && ch < 127) gt_putc(ch);
+        }
+        gt_putc('\n');
+        return 0;
+    }
+
+    if (!k_strncmp(c, "touch ", 6)) {
+        const char* name = c + 6;
+        while (*name == ' ') name++;
+        if (k_strlen(name) == 0) {
+            gt_puts_c("  Kullanim: touch dosyaadi\n", 3);
+            return 0;
+        }
+        int idx = vfs_create_file(name, -1, "", 0);
+        if (idx >= 0) {
+            gt_puts_c("  Olusturuldu: ", 1);
+            gt_puts_c(name, 5);
+            gt_putc('\n');
+        } else {
+            gt_puts_c("  Olusturulamadi!\n", 4);
+        }
+        return 0;
+    }
+
+    if (!k_strncmp(c, "mkdir ", 6)) {
+        const char* name = c + 6;
+        while (*name == ' ') name++;
+        if (k_strlen(name) == 0) {
+            gt_puts_c("  Kullanim: mkdir klasoradi\n", 3);
+            return 0;
+        }
+        int idx = vfs_create_dir(name, -1);
+        if (idx >= 0) {
+            gt_puts_c("  Klasor olusturuldu: ", 1);
+            gt_puts_c(name, 6);
+            gt_putc('\n');
+        } else {
+            gt_puts_c("  Olusturulamadi!\n", 4);
+        }
+        return 0;
+    }
+
+    if (!k_strncmp(c, "write ", 6)) {
+        /* write dosya icerik */
+        const char* rest = c + 6;
+        while (*rest == ' ') rest++;
+        /* Ilk kelime dosya adi */
+        char fname[VFS_MAX_NAME];
+        int fi = 0;
+        while (*rest && *rest != ' ' && fi < VFS_MAX_NAME - 1)
+            fname[fi++] = *rest++;
+        fname[fi] = '\0';
+        while (*rest == ' ') rest++;
+
+        int node = vfs_find_path(fname);
+        if (node < 0) {
+            /* Dosya yok, olustur */
+            node = vfs_create_file(fname, -1, rest, k_strlen(rest));
+            if (node >= 0) {
+                gt_puts_c("  Yazildi (yeni): ", 1);
+                gt_puts_c(fname, 5);
+                gt_putc('\n');
+            } else {
+                gt_puts_c("  Yazilamadi!\n", 4);
+            }
+        } else {
+            int ret = vfs_write_file(node, rest, k_strlen(rest));
+            if (ret == 0) {
+                gt_puts_c("  Yazildi: ", 1);
+                gt_puts_c(fname, 5);
+                gt_putc('\n');
+            } else {
+                gt_puts_c("  Yazilamadi!\n", 4);
+            }
+        }
+        return 0;
+    }
+
+    if (!k_strncmp(c, "rm ", 3)) {
+        const char* path = c + 3;
+        while (*path == ' ') path++;
+        int node = vfs_find_path(path);
+        if (node < 0) {
+            gt_puts_c("  Bulunamadi: ", 4);
+            gt_puts_c(path, 5);
+            gt_putc('\n');
+            return 0;
+        }
+        int ret = vfs_delete(node);
+        if (ret == 0) {
+            gt_puts_c("  Silindi: ", 1);
+            gt_puts_c(path, 5);
+            gt_putc('\n');
+        } else if (ret == -3) {
+            gt_puts_c("  Klasor bos degil!\n", 4);
+        } else {
+            gt_puts_c("  Silinemedi!\n", 4);
         }
         return 0;
     }
