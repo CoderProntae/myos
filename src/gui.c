@@ -459,22 +459,43 @@ static int gt_process(void) {
         gt_puts_c("  Bellek Bilgisi:\n", 3);
         char buf[20];
 
-        gt_puts_c("  Toplam : ", 0);
-        k_itoa((int)(heap_get_total() / 1024), buf, 10);
+        /* Gercek RAM */
+        gt_puts_c("  Fiziksel RAM : ", 0);
+        k_itoa((int)ram_get_total_mb(), buf, 10);
         gt_puts_c(buf, 1);
+        gt_puts_c(" MB (", 0);
+        k_itoa((int)ram_get_total_kb(), buf, 10);
+        gt_puts_c(buf, 0);
+        gt_puts_c(" KB)\n", 0);
+
+        gt_puts_c("  Alt Bellek   : ", 0);
+        k_itoa((int)ram_get_lower_kb(), buf, 10);
+        gt_puts_c(buf, 2);
         gt_puts_c(" KB\n", 0);
 
-        gt_puts_c("  Kullan.: ", 0);
+        gt_puts_c("  Ust Bellek   : ", 0);
+        k_itoa((int)ram_get_upper_kb(), buf, 10);
+        gt_puts_c(buf, 2);
+        gt_puts_c(" KB\n", 0);
+
+        /* Heap */
+        gt_puts_c("  ---\n", 0);
+        gt_puts_c("  Heap Toplam  : ", 0);
+        k_itoa((int)(heap_get_total() / 1024), buf, 10);
+        gt_puts_c(buf, 5);
+        gt_puts_c(" KB\n", 0);
+
+        gt_puts_c("  Heap Kullan. : ", 0);
         k_itoa((int)(heap_get_used() / 1024), buf, 10);
         gt_puts_c(buf, 3);
         gt_puts_c(" KB\n", 0);
 
-        gt_puts_c("  Bos    : ", 0);
+        gt_puts_c("  Heap Bos     : ", 0);
         k_itoa((int)(heap_get_free() / 1024), buf, 10);
         gt_puts_c(buf, 1);
         gt_puts_c(" KB\n", 0);
 
-        gt_puts_c("  Bloklar: ", 0);
+        gt_puts_c("  Bloklar      : ", 0);
         k_itoa((int)heap_get_block_count(), buf, 10);
         gt_puts_c(buf, 2);
         gt_putc('\n');
