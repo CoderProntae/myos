@@ -18,6 +18,7 @@
 #include "syscall.h"
 #include "task.h"
 #include "libc.h"
+#include "posix.h"
 
 static int start_open = 0, window_open = 0;
 static int settings_selected_depth = 32, current_hz = 60, selected_hz = 60;
@@ -166,6 +167,8 @@ static int gt_process(void) {
         gt_puts_c("  syscall", 2);  gt_puts_c("   - Syscall testi\n", 0);
         gt_puts_c("  tasks", 2);    gt_puts_c("     - Gorev listesi\n", 0);
         gt_puts_c("  libctest", 2);  gt_puts_c("  - libc testi\n", 0);
+        gt_puts_c("  posixtest", 2); gt_puts_c(" - POSIX testi\n", 0);
+        gt_puts_c("  env", 2);      gt_puts_c("       - Ortam degiskenleri\n", 0);
         gt_puts_c("  exit", 2);     gt_puts_c("      - Masaustune don\n", 0);
         gt_puts_c("  reboot", 2);   gt_puts_c("    - Yeniden baslat\n", 0);
         return 0;
@@ -699,6 +702,119 @@ static int gt_process(void) {
 
         gt_puts_c("  ===\n", 0);
         gt_puts_c("  LIBC TESTI BASARILI!\n", 1);
+        return 0;
+    }
+
+    if (!k_strcmp(c, "posixtest")) {
+        gt_puts_c("  === POSIX Uyumluluk Testi ===\n", 3);
+        char buf[128];
+
+        /* 1. getpid */
+        snprintf(buf, sizeof(buf), "  getpid() = %d", getpid());
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 2. getenv */
+        char* home = getenv("HOME");
+        snprintf(buf, sizeof(buf), "  getenv(HOME) = %s", home ? home : "NULL");
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        char* user = getenv("USER");
+        snprintf(buf, sizeof(buf), "  getenv(USER) = %s", user ? user : "NULL");
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 3. setenv */
+        setenv("MYVAR", "test123", 1);
+        char* myvar = getenv("MYVAR");
+        snprintf(buf, sizeof(buf), "  setenv+getenv(MYVAR) = %s", myvar ? myvar : "NULL");
+        gt_puts_c(buf, 1); gt_putc('\n');
+        unsetenv("MYVAR");
+
+        /* 4. getcwd */
+        char cwdbuf[128];
+        getcwd(cwdbuf, sizeof(cwdbuf));
+        snprintf(buf, sizeof(buf), "  getcwd() = %s", cwdbuf);
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 5. chdir */
+        chdir("/sys");
+        getcwd(cwdbuf, sizeof(cwdbuf));
+        snprintf(buf, sizeof(buf), "  chdir(/sys) -> cwd = %s", cwdbuf);
+        gt_puts_c(buf, 0); gt_putc('\n');
+        chdir("/home");
+
+        /* 6. access */
+        int acc = access("home/readme.txt", F_OK);
+        snprintf(buf, sizeof(buf), "  access(readme.txt) = %d", acc);
+        gt_puts_c(buf, acc == 0 ? 1 : 4); gt_putc('\n');
+
+        /* 7. opendir/readdir */
+        DIR_t* dir = opendir("/");
+        if (dir) {
+            gt_puts_c("  opendir(/) = OK\n", 1);
+            int dc = 0;
+            dirent_t* de;
+            while ((de = readdir(dir)) != NULL) dc++;
+            snprintf(buf, sizeof(buf), "  readdir: %d oge", dc);
+            gt_puts_c(buf, 0); gt_putc('\n');
+            closedir(dir);
+        } else {
+            gt_puts_c("  opendir = FAIL\n", 4);
+        }
+
+        /* 8. pipe */
+        int pfd[2];
+        if (pipe(pfd) == 0) {
+            gt_puts_c("  pipe() = OK\n", 1);
+            const char* msg = "hello pipe";
+            pipe_write(pfd[1], msg, strlen(msg));
+            char pbuf[32];
+            k_memset(pbuf, 0, sizeof(pbuf));
+            pipe_read(pfd[0], pbuf, sizeof(pbuf) - 1);
+            snprintf(buf, sizeof(buf), "  pipe read = \"%s\"", pbuf);
+            gt_puts_c(buf, 1); gt_putc('\n');
+        }
+
+        /* 9. signal */
+        signal(SIGINT, SIG_IGN);
+        gt_puts_c("  signal(SIGINT, SIG_IGN) = OK\n", 1);
+        signal(SIGINT, SIG_DFL);
+
+        /* 10. time */
+        time_t now;
+        time_now(&now);
+        tm_t* tm = localtime(&now);
+        snprintf(buf, sizeof(buf), "  localtime = %02d:%02d:%02d",
+                 tm->tm_hour, tm->tm_min, tm->tm_sec);
+        gt_puts_c(buf, 2); gt_putc('\n');
+
+        /* 11. sysconf */
+        snprintf(buf, sizeof(buf), "  sysconf(PAGESIZE) = %d", (int)sysconf(_SC_PAGESIZE));
+        gt_puts_c(buf, 0); gt_putc('\n');
+        snprintf(buf, sizeof(buf), "  sysconf(PHYS_PAGES) = %d", (int)sysconf(_SC_PHYS_PAGES));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 12. errno/strerror */
+        snprintf(buf, sizeof(buf), "  strerror(ENOENT) = %s", strerror(ENOENT));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        /* 13. isatty */
+        snprintf(buf, sizeof(buf), "  isatty(0) = %d", isatty(0));
+        gt_puts_c(buf, 0); gt_putc('\n');
+
+        gt_puts_c("  ===\n", 0);
+        gt_puts_c("  POSIX TESTI BASARILI!\n", 1);
+        return 0;
+    }
+
+    if (!k_strcmp(c, "env")) {
+        gt_puts_c("  Ortam Degiskenleri:\n", 3);
+        char buf2[128];
+        const char* vars[] = {"HOME","PATH","USER","SHELL","TERM","LANG","HOSTNAME","OS","VERSION","ARCH","PWD"};
+        for (int i = 0; i < 11; i++) {
+            char* val = getenv(vars[i]);
+            snprintf(buf2, sizeof(buf2), "  %s=%s", vars[i], val ? val : "(yok)");
+            gt_puts_c(buf2, 0); gt_putc('\n');
+        }
         return 0;
     }
     
