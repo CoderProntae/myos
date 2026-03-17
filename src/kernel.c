@@ -8,9 +8,11 @@
 #include "dns.h"
 #include "tcp.h"
 #include "http.h"
+#include "heap.h"
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     (void)magic;
+    heap_init();
     vesa_init(mbi);
     mouse_init();
     pci_init();
