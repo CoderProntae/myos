@@ -215,3 +215,40 @@ uint32_t heap_get_free(void) {
 uint32_t heap_get_block_count(void) {
     return block_count;
 }
+
+/* ======== Gercek RAM Algilama ======== */
+
+static uint32_t real_ram_lower_kb = 0;   /* 640 KB'a kadar */
+static uint32_t real_ram_upper_kb = 0;   /* 1 MB'dan sonra */
+static uint32_t real_ram_total_kb = 0;
+
+void ram_detect(uint32_t mem_lower, uint32_t mem_upper) {
+    /*
+     * Multiboot mem_lower: 0-640KB arasi kullanilabilir bellek (KB)
+     * Multiboot mem_upper: 1MB'dan sonrasi kullanilabilir bellek (KB)
+     * 
+     * Toplam RAM = mem_lower + 384KB (reserved) + mem_upper
+     * Veya basitce: mem_upper + 1024 KB (ilk 1MB)
+     */
+    real_ram_lower_kb = mem_lower;
+    real_ram_upper_kb = mem_upper;
+
+    /* Toplam: ust bellek + alt 1MB */
+    real_ram_total_kb = mem_upper + 1024;
+}
+
+uint32_t ram_get_total_kb(void) {
+    return real_ram_total_kb;
+}
+
+uint32_t ram_get_total_mb(void) {
+    return real_ram_total_kb / 1024;
+}
+
+uint32_t ram_get_lower_kb(void) {
+    return real_ram_lower_kb;
+}
+
+uint32_t ram_get_upper_kb(void) {
+    return real_ram_upper_kb;
+}
