@@ -4,9 +4,6 @@
 static uint8_t heap_area[HEAP_SIZE] __attribute__((aligned(16)));
 static block_header_t* first_block = 0;
 static int heap_initialized = 0;
-static uint32_t block_count = 0;
-
-/* ======== Init ======== */
 
 void heap_init(void) {
     first_block = (block_header_t*)heap_area;
@@ -14,20 +11,18 @@ void heap_init(void) {
     first_block->magic = HEAP_MAGIC_FREE;
     first_block->next  = 0;
     first_block->prev  = 0;
-    block_count = 1;
     heap_initialized = 1;
 }
 
-/* ======== Blok Bolme ======== */
+/* ======== Split ======== */
 
 static void split_block(block_header_t* block, uint32_t size) {
-    if (block->size < size + BLOCK_HDR_SIZE + MIN_BLOCK_SIZE)
+    uint32_t remaining = block->size - size;
+    if (remaining <= BLOCK_HDR_SIZE + MIN_BLOCK_SIZE)
         return;
 
-    uint8_t* new_addr = (uint8_t*)block + BLOCK_HDR_SIZE + size;
-    block_header_t* new_block = (block_header_t*)new_addr;
-
-    new_block->size  = block->size - size - BLOCK_HDR_SIZE;
+    block_header_t* new_block = (block_header_t*)((uint8_t*)block + BLOCK_HDR_SIZE + size);
+    new_block->size  = remaining - BLOCK_HDR_SIZE;
     new_block->magic = HEAP_MAGIC_FREE;
     new_block->next  = block->next;
     new_block->prev  = block;
@@ -37,38 +32,42 @@ static void split_block(block_header_t* block, uint32_t size) {
 
     block->next = new_block;
     block->size = size;
-    block_count++;
 }
 
-/* ======== Birlestirme ======== */
+/* ======== Merge ======== */
 
-static void merge_free_blocks(block_header_t* block) {
-    /* Ileri birlestir */
-    while (block->next && block->next->magic == HEAP_MAGIC_FREE) {
-        uint8_t* expected = (uint8_t*)block + BLOCK_HDR_SIZE + block->size;
-        if ((uint8_t*)block->next != expected) break;
+static block_header_t* try_merge(block_header_t* block) {
+    if (!block) return block;
 
-        block_header_t* next = block->next;
-        block->size += BLOCK_HDR_SIZE + next->size;
-        block->next = next->next;
-        if (next->next) next->next->prev = block;
-        next->magic = 0;
-        block_count--;
+    /* Ileri: bu blok + sonraki blok */
+    if (block->next && block->next->magic == HEAP_MAGIC_FREE) {
+        /* Bitisik mi? */
+        uint8_t* end_of_block = (uint8_t*)block + BLOCK_HDR_SIZE + block->size;
+        if (end_of_block == (uint8_t*)block->next) {
+            block_header_t* next = block->next;
+            block->size += BLOCK_HDR_SIZE + next->size;
+            block->next = next->next;
+            if (next->next)
+                next->next->prev = block;
+            next->magic = 0;
+        }
     }
 
-    /* Geri birlestir */
-    while (block->prev && block->prev->magic == HEAP_MAGIC_FREE) {
-        uint8_t* expected = (uint8_t*)block->prev + BLOCK_HDR_SIZE + block->prev->size;
-        if ((uint8_t*)block != expected) break;
-
-        block_header_t* prev = block->prev;
-        prev->size += BLOCK_HDR_SIZE + block->size;
-        prev->next = block->next;
-        if (block->next) block->next->prev = prev;
-        block->magic = 0;
-        block = prev;
-        block_count--;
+    /* Geri: onceki blok + bu blok */
+    if (block->prev && block->prev->magic == HEAP_MAGIC_FREE) {
+        uint8_t* end_of_prev = (uint8_t*)block->prev + BLOCK_HDR_SIZE + block->prev->size;
+        if (end_of_prev == (uint8_t*)block) {
+            block_header_t* prev = block->prev;
+            prev->size += BLOCK_HDR_SIZE + block->size;
+            prev->next = block->next;
+            if (block->next)
+                block->next->prev = prev;
+            block->magic = 0;
+            block = prev;
+        }
     }
+
+    return block;
 }
 
 /* ======== malloc ======== */
@@ -97,10 +96,18 @@ void kfree(void* ptr) {
     if (!ptr || !heap_initialized) return;
 
     block_header_t* block = (block_header_t*)((uint8_t*)ptr - BLOCK_HDR_SIZE);
+
+    /* Magic kontrolu */
     if (block->magic != HEAP_MAGIC_USED) return;
 
+    /* Serbest birak */
     block->magic = HEAP_MAGIC_FREE;
-    merge_free_blocks(block);
+
+    /* Veriyi temizle */
+    k_memset((uint8_t*)block + BLOCK_HDR_SIZE, 0, block->size);
+
+    /* Bitisik bos bloklarla birlestir */
+    try_merge(block);
 }
 
 /* ======== realloc ======== */
@@ -112,15 +119,16 @@ void* krealloc(void* ptr, uint32_t new_size) {
     block_header_t* block = (block_header_t*)((uint8_t*)ptr - BLOCK_HDR_SIZE);
     if (block->magic != HEAP_MAGIC_USED) return 0;
 
+    new_size = (new_size + 15) & ~15;
     if (block->size >= new_size) return ptr;
 
     void* new_ptr = kmalloc(new_size);
     if (!new_ptr) return 0;
 
     uint32_t copy_size = block->size < new_size ? block->size : new_size;
-    uint8_t* src = (uint8_t*)ptr;
-    uint8_t* dst = (uint8_t*)new_ptr;
-    for (uint32_t i = 0; i < copy_size; i++) dst[i] = src[i];
+    uint8_t* s = (uint8_t*)ptr;
+    uint8_t* d = (uint8_t*)new_ptr;
+    for (uint32_t i = 0; i < copy_size; i++) d[i] = s[i];
 
     kfree(ptr);
     return new_ptr;
@@ -135,7 +143,7 @@ void* kcalloc(uint32_t count, uint32_t size) {
     return ptr;
 }
 
-/* ======== Bilgi — GERCEK HESAPLAMA ======== */
+/* ======== Bilgi — Linked List Tarama ======== */
 
 uint32_t heap_get_total(void) {
     return HEAP_SIZE;
@@ -147,7 +155,7 @@ uint32_t heap_get_used(void) {
     block_header_t* cur = first_block;
     while (cur) {
         if (cur->magic == HEAP_MAGIC_USED)
-            used += cur->size + BLOCK_HDR_SIZE;
+            used += cur->size;
         cur = cur->next;
     }
     return used;
@@ -155,21 +163,28 @@ uint32_t heap_get_used(void) {
 
 uint32_t heap_get_free(void) {
     if (!heap_initialized) return 0;
-    uint32_t free_bytes = 0;
+    uint32_t fb = 0;
     block_header_t* cur = first_block;
     while (cur) {
         if (cur->magic == HEAP_MAGIC_FREE)
-            free_bytes += cur->size;
+            fb += cur->size;
         cur = cur->next;
     }
-    return free_bytes;
+    return fb;
 }
 
 uint32_t heap_get_block_count(void) {
-    return block_count;
+    if (!heap_initialized) return 0;
+    uint32_t count = 0;
+    block_header_t* cur = first_block;
+    while (cur) {
+        count++;
+        cur = cur->next;
+    }
+    return count;
 }
 
-/* ======== Gercek RAM ======== */
+/* ======== RAM ======== */
 
 static uint32_t real_ram_lower_kb = 0;
 static uint32_t real_ram_upper_kb = 0;
