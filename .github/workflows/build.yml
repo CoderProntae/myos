@@ -50,6 +50,7 @@ jobs:
         gcc $FLAGS src/syscall.c  -o build/syscall.o
         gcc $FLAGS src/task.c     -o build/task.o
         gcc $FLAGS src/libc.c     -o build/libc.o
+        gcc $FLAGS src/posix.c    -o build/posix.o
 
     - name: Link kernel
       run: |
@@ -59,7 +60,7 @@ jobs:
           build/setup.o build/apps.o build/browser.o build/pci.o \
           build/e1000.o build/net.o build/dns.o build/tcp.o build/http.o \
           build/heap.o build/vfs.o build/elf.o build/syscall.o build/task.o \
-          build/libc.o
+          build/libc.o build/posix.o
 
     - name: Create ISO
       run: |
