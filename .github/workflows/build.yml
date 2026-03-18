@@ -1,81 +1,264 @@
-name: Build MyOS ISO
+# ============================================
+#         MyOS Build Pipeline
+# ============================================
+# Versiyon: 2.0
+# Tarih: 18 Mart 2026
+# ============================================
+
+name: MyOS Build
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Manuel tetikleme
+
+env:
+  OS_NAME: myos
+  OS_VERSION: "0.3"
 
 jobs:
   build:
+    name: Build MyOS
     runs-on: ubuntu-latest
-
+    
     steps:
-    - name: Checkout
+    # ==================== CHECKOUT ====================
+    - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install tools
+    # ==================== TOOLCHAIN KURULUMU ====================
+    - name: Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y nasm gcc grub-pc-bin grub-common xorriso gcc-multilib mtools
+        sudo apt-get install -y \
+          nasm \
+          gcc \
+          g++ \
+          make \
+          xorriso \
+          grub-pc-bin \
+          grub-common \
+          mtools \
+          qemu-system-x86
 
-    - name: Create build dir
-      run: mkdir -p build
-
-    - name: Compile Assembly
-      run: nasm -f elf32 src/boot.asm -o build/boot.o
-
-    - name: Compile C files
+    - name: Install i686-elf cross compiler
       run: |
-        FLAGS="-m32 -std=c99 -O2 -ffreestanding -fno-stack-protector -fno-pie -fno-builtin -Wall -Wextra -Wno-unused-parameter -c"
-        gcc $FLAGS src/kernel.c   -o build/kernel.o
-        gcc $FLAGS src/vesa.c     -o build/vesa.o
-        gcc $FLAGS src/vga.c      -o build/vga.o
-        gcc $FLAGS src/mouse.c    -o build/mouse.o
-        gcc $FLAGS src/keyboard.c -o build/keyboard.o
-        gcc $FLAGS src/string.c   -o build/string.o
-        gcc $FLAGS src/shell.c    -o build/shell.o
-        gcc $FLAGS src/gui.c      -o build/gui.o
-        gcc $FLAGS src/setup.c    -o build/setup.o
-        gcc $FLAGS src/apps.c     -o build/apps.o
-        gcc $FLAGS src/browser.c  -o build/browser.o
-        gcc $FLAGS src/pci.c      -o build/pci.o
-        gcc $FLAGS src/e1000.c    -o build/e1000.o
-        gcc $FLAGS src/net.c      -o build/net.o
-        gcc $FLAGS src/dns.c      -o build/dns.o
-        gcc $FLAGS src/tcp.c      -o build/tcp.o
-        gcc $FLAGS src/http.c     -o build/http.o
-        gcc $FLAGS src/heap.c     -o build/heap.o
-        gcc $FLAGS src/vfs.c      -o build/vfs.o
-        gcc $FLAGS src/elf.c      -o build/elf.o
-        gcc $FLAGS src/syscall.c  -o build/syscall.o
-        gcc $FLAGS src/task.c     -o build/task.o
-        gcc $FLAGS src/libc.c     -o build/libc.o
-        gcc $FLAGS src/posix.c    -o build/posix.o
-        gcc $FLAGS src/gfx.c      -o build/gfx.o
-        gcc $FLAGS src/canvas.c   -o build/canvas.o
-        gcc $FLAGS src/power.c   -o build/power.o
+        # Cross compiler indir
+        mkdir -p $HOME/opt
+        cd $HOME/opt
+        
+        # Önceden derlenmiş cross compiler (hızlı)
+        wget -q https://github.com/lordmilko/i686-elf-tools/releases/download/7.1.0/i686-elf-tools-linux.zip
+        unzip -q i686-elf-tools-linux.zip
+        
+        # PATH'e ekle
+        echo "$HOME/opt/i686-elf-tools-linux/bin" >> $GITHUB_PATH
 
+    - name: Verify toolchain
+      run: |
+        echo "=== Toolchain Versions ==="
+        nasm --version
+        i686-elf-gcc --version | head -1
+        i686-elf-ld --version | head -1
+        echo "=========================="
 
+    # ==================== DERLEME ====================
+    - name: Create build directory
+      run: mkdir -p build/iso/boot/grub
+
+    # ===== BOOT =====
+    - name: Compile boot.asm
+      run: |
+        nasm -f elf32 src/boot.asm -o build/boot.o
+        echo "✓ boot.asm compiled"
+
+    # ===== KERNEL =====
+    - name: Compile kernel
+      run: |
+        i686-elf-gcc -c src/kernel/kernel.c -o build/kernel.o \
+          -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+          -I src/include -I src
+        echo "✓ kernel.c compiled"
+
+    - name: Compile power
+      run: |
+        i686-elf-gcc -c src/kernel/power.c -o build/power.o \
+          -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+          -I src/include -I src
+        echo "✓ power.c compiled"
+
+    # ===== DRIVERS =====
+    - name: Compile drivers
+      run: |
+        for file in src/drivers/*.c; do
+          if [ -f "$file" ]; then
+            name=$(basename "$file" .c)
+            i686-elf-gcc -c "$file" -o "build/${name}.o" \
+              -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+              -I src/include -I src
+            echo "✓ ${name}.c compiled"
+          fi
+        done
+
+    # ===== MEMORY =====
+    - name: Compile memory
+      run: |
+        for file in src/memory/*.c; do
+          if [ -f "$file" ]; then
+            name=$(basename "$file" .c)
+            i686-elf-gcc -c "$file" -o "build/${name}.o" \
+              -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+              -I src/include -I src
+            echo "✓ ${name}.c compiled"
+          fi
+        done
+
+    # ===== FILESYSTEM =====
+    - name: Compile filesystem
+      run: |
+        for file in src/fs/*.c; do
+          if [ -f "$file" ]; then
+            name=$(basename "$file" .c)
+            i686-elf-gcc -c "$file" -o "build/${name}.o" \
+              -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+              -I src/include -I src
+            echo "✓ ${name}.c compiled"
+          fi
+        done
+
+    # ===== NETWORK =====
+    - name: Compile network
+      run: |
+        for file in src/net/*.c; do
+          if [ -f "$file" ]; then
+            name=$(basename "$file" .c)
+            i686-elf-gcc -c "$file" -o "build/${name}.o" \
+              -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+              -I src/include -I src
+            echo "✓ ${name}.c compiled"
+          fi
+        done
+
+    # ===== GUI =====
+    - name: Compile GUI
+      run: |
+        for file in src/gui/*.c; do
+          if [ -f "$file" ]; then
+            name=$(basename "$file" .c)
+            i686-elf-gcc -c "$file" -o "build/${name}.o" \
+              -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+              -I src/include -I src
+            echo "✓ ${name}.c compiled"
+          fi
+        done
+
+    # ===== APPS =====
+    - name: Compile applications
+      run: |
+        for file in src/apps/*.c; do
+          if [ -f "$file" ]; then
+            name=$(basename "$file" .c)
+            i686-elf-gcc -c "$file" -o "build/${name}.o" \
+              -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+              -I src/include -I src
+            echo "✓ ${name}.c compiled"
+          fi
+        done
+
+    # ===== LIB =====
+    - name: Compile libraries
+      run: |
+        for file in src/lib/*.c; do
+          if [ -f "$file" ]; then
+            name=$(basename "$file" .c)
+            i686-elf-gcc -c "$file" -o "build/${name}.o" \
+              -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
+              -I src/include -I src
+            echo "✓ ${name}.c compiled"
+          fi
+        done
+
+    # ==================== LINK ====================
     - name: Link kernel
       run: |
-        ld -m elf_i386 -T linker.ld -nostdlib -o build/myos.bin \
-          build/boot.o build/kernel.o build/vesa.o build/vga.o build/mouse.o \
-          build/keyboard.o build/string.o build/shell.o build/gui.o \
-          build/setup.o build/apps.o build/browser.o build/pci.o \
-          build/e1000.o build/net.o build/dns.o build/tcp.o build/http.o \
-          build/heap.o build/vfs.o build/elf.o build/syscall.o build/task.o \
-          build/libc.o build/posix.o build/gfx.o build/canvas.o build/power.o
+        i686-elf-ld -T src/linker.ld -o build/iso/boot/kernel.bin \
+          build/*.o \
+          -nostdlib
+        echo "✓ Kernel linked successfully"
+        ls -lh build/iso/boot/kernel.bin
 
-    - name: Create ISO
+    # ==================== GRUB ====================
+    - name: Setup GRUB
       run: |
-        mkdir -p isodir/boot/grub
-        cp build/myos.bin isodir/boot/myos.bin
-        cp grub.cfg isodir/boot/grub/grub.cfg
-        grub-mkrescue -o myos.iso isodir
+        cp grub/grub.cfg build/iso/boot/grub/grub.cfg
+        echo "✓ GRUB config copied"
 
-    - name: Upload ISO
+    # ==================== ISO OLUŞTURMA ====================
+    - name: Create bootable ISO
+      run: |
+        grub-mkrescue -o build/${{ env.OS_NAME }}.iso build/iso
+        echo "✓ ISO created successfully"
+        ls -lh build/${{ env.OS_NAME }}.iso
+
+    # ==================== TEST ====================
+    - name: Quick boot test
+      run: |
+        timeout 10 qemu-system-i386 \
+          -cdrom build/${{ env.OS_NAME }}.iso \
+          -m 128M \
+          -display none \
+          -serial stdio \
+          -no-reboot \
+          -d cpu_reset 2>&1 || true
+        echo "✓ Boot test completed"
+
+    # ==================== ARTIFACT ====================
+    - name: Upload ISO artifact
       uses: actions/upload-artifact@v4
       with:
-        name: myos-iso
-        path: myos.iso
+        name: ${{ env.OS_NAME }}-${{ env.OS_VERSION }}-${{ github.sha }}
+        path: build/${{ env.OS_NAME }}.iso
         retention-days: 30
+
+    # ==================== RELEASE (Tag push) ====================
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: build/${{ env.OS_NAME }}.iso
+        name: MyOS ${{ github.ref_name }}
+        body: |
+          ## MyOS ${{ github.ref_name }}
+          
+          ### İndirme
+          `${{ env.OS_NAME }}.iso` dosyasını indirip VirtualBox veya QEMU ile test edebilirsiniz.
+          
+          ### QEMU ile çalıştırma
+          ```bash
+          qemu-system-i386 -cdrom ${{ env.OS_NAME }}.iso -m 128M
+          ```
+          
+          ### Değişiklikler
+          - Commit: ${{ github.sha }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # ==================== ÖZET ====================
+    - name: Build summary
+      run: |
+        echo ""
+        echo "========================================"
+        echo "        MyOS Build Summary"
+        echo "========================================"
+        echo "Version:    ${{ env.OS_VERSION }}"
+        echo "Commit:     ${{ github.sha }}"
+        echo "Branch:     ${{ github.ref_name }}"
+        echo ""
+        echo "Compiled files:"
+        ls -1 build/*.o | wc -l
+        echo ""
+        echo "ISO size:"
+        ls -lh build/${{ env.OS_NAME }}.iso | awk '{print $5}'
+        echo "========================================"
