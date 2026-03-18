@@ -53,6 +53,8 @@ jobs:
         gcc $FLAGS src/posix.c    -o build/posix.o
         gcc $FLAGS src/gfx.c      -o build/gfx.o
         gcc $FLAGS src/canvas.c   -o build/canvas.o
+        gcc $FLAGS src/power.c   -o build/power.o
+
 
     - name: Link kernel
       run: |
@@ -62,7 +64,7 @@ jobs:
           build/setup.o build/apps.o build/browser.o build/pci.o \
           build/e1000.o build/net.o build/dns.o build/tcp.o build/http.o \
           build/heap.o build/vfs.o build/elf.o build/syscall.o build/task.o \
-          build/libc.o build/posix.o build/gfx.o build/canvas.o
+          build/libc.o build/posix.o build/gfx.o build/canvas.o build/power.o
 
     - name: Create ISO
       run: |
