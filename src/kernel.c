@@ -37,6 +37,13 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
     dns_init();
     tcp_init();
     http_init();
+    terminal_register();
+    calculator_register();
+    browser_register();
+    settings_register();
+    notepad_register();
+    fm_register();
+    about_register();
 
     setup_run();
     gui_run();
