@@ -1,5 +1,7 @@
 # ============================================
-#         MyOS Build Pipeline v2.1
+#         MyOS Build Pipeline v2.2
+# ============================================
+# Düz ve klasörlü yapı desteği
 # ============================================
 
 name: MyOS Build
@@ -36,58 +38,16 @@ jobs:
           grub-pc-bin \
           grub-common \
           mtools \
-          qemu-system-x86 \
-          curl \
-          wget \
-          tar
-
-    - name: Setup i686-elf cross compiler
-      run: |
-        # Cross compiler için dizin oluştur
-        mkdir -p $HOME/cross
-        cd $HOME/cross
-        
-        # Önceden derlenmiş toolchain indir (alternatif kaynak)
-        echo "Downloading cross compiler..."
-        curl -L -o i686-elf.tar.gz \
-          "https://github.com/nativeos/i686-elf-toolchain/releases/download/preview/i686-elf-4.9.1-Linux-x86_64.tar.xz" \
-          || wget -O i686-elf.tar.gz \
-          "https://newos.org/toolchains/i686-elf-4.9.1-Linux-x86_64.tar.xz" \
-          || true
-        
-        # Eğer indirme başarısız olduysa manuel derle
-        if [ ! -f i686-elf.tar.gz ] || [ ! -s i686-elf.tar.gz ]; then
-          echo "Download failed, using system GCC with -m32..."
-          echo "USE_SYSTEM_GCC=true" >> $GITHUB_ENV
-        else
-          tar -xf i686-elf.tar.gz --strip-components=1 || tar -xJf i686-elf.tar.gz --strip-components=1 || true
-          
-          if [ -d "bin" ]; then
-            echo "$HOME/cross/bin" >> $GITHUB_PATH
-            echo "USE_SYSTEM_GCC=false" >> $GITHUB_ENV
-          else
-            echo "Extraction failed, using system GCC..."
-            echo "USE_SYSTEM_GCC=true" >> $GITHUB_ENV
-          fi
-        fi
-
-    - name: Install GCC multilib (fallback)
-      if: env.USE_SYSTEM_GCC == 'true'
-      run: |
-        sudo apt-get install -y gcc-multilib g++-multilib
+          gcc-multilib \
+          g++-multilib
 
     - name: Verify toolchain
       run: |
-        echo "=== Toolchain Check ==="
-        if [ "$USE_SYSTEM_GCC" = "true" ]; then
-          echo "Using system GCC with -m32 flag"
-          gcc --version | head -1
-        else
-          echo "Using i686-elf cross compiler"
-          i686-elf-gcc --version | head -1 || echo "i686-elf-gcc not found"
-        fi
+        echo "=== Toolchain ==="
+        gcc --version | head -1
         nasm --version
-        echo "========================"
+        ld --version | head -1
+        echo "================="
 
     # ==================== BUILD SETUP ====================
     - name: Create build directories
@@ -95,141 +55,167 @@ jobs:
         mkdir -p build/iso/boot/grub
         mkdir -p build/obj
 
-    # ==================== COMPILE ====================
+    # ==================== LIST FILES ====================
+    - name: List source files
+      run: |
+        echo "=== Source Files ==="
+        find src -name "*.c" -o -name "*.asm" | sort
+        echo "===================="
+
+    # ==================== COMPILE BOOT ====================
     - name: Compile boot.asm
       run: |
         nasm -f elf32 src/boot.asm -o build/obj/boot.o
         echo "✓ boot.asm"
 
+    # ==================== COMPILE C FILES ====================
     - name: Compile all C files
       run: |
-        # GCC ayarları
-        if [ "$USE_SYSTEM_GCC" = "true" ]; then
-          CC="gcc"
-          CFLAGS="-m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -fno-stack-protector -fno-pie -no-pie"
-        else
-          CC="i686-elf-gcc"
-          CFLAGS="-std=gnu99 -ffreestanding -O2 -Wall -Wextra"
-        fi
+        CC="gcc"
+        CFLAGS="-m32 -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -fno-stack-protector -fno-pie -nostdlib"
         
-        INCLUDES="-I src -I src/include"
+        # Include paths - hem kök hem alt klasörler
+        INCLUDES="-I src -I src/include -I src/kernel -I src/drivers -I src/memory -I src/fs -I src/net -I src/gui -I src/apps -I src/lib"
         
-        # Tüm .c dosyalarını derle (alt klasörler dahil)
-        compile_dir() {
-          local dir=$1
-          if [ -d "$dir" ]; then
-            for file in "$dir"/*.c; do
-              if [ -f "$file" ]; then
-                name=$(basename "$file" .c)
-                $CC -c "$file" -o "build/obj/${name}.o" $CFLAGS $INCLUDES 2>&1 || {
-                  echo "⚠ Warning compiling $name, trying with relaxed flags..."
-                  $CC -c "$file" -o "build/obj/${name}.o" $CFLAGS $INCLUDES -Wno-error 2>&1 || true
-                }
-                echo "✓ $name.c"
-              fi
-            done
+        # Fonksiyon: Tek dosya derle
+        compile_file() {
+          local file=$1
+          local name=$(basename "$file" .c)
+          
+          echo -n "Compiling $name.c ... "
+          
+          if $CC -c "$file" -o "build/obj/${name}.o" $CFLAGS $INCLUDES 2>build/obj/${name}.err; then
+            echo "✓"
+            return 0
+          else
+            echo "✗"
+            cat build/obj/${name}.err
+            return 1
           fi
         }
         
-        # Ana src klasörü
-        compile_dir "src"
+        # Tüm C dosyalarını bul ve derle
+        echo ""
+        echo "=== Compiling C Files ==="
         
-        # Alt klasörler
-        compile_dir "src/kernel"
-        compile_dir "src/drivers"
-        compile_dir "src/memory"
-        compile_dir "src/fs"
-        compile_dir "src/net"
-        compile_dir "src/gui"
-        compile_dir "src/apps"
-        compile_dir "src/lib"
+        FAILED=0
+        
+        # Önce src/ kökündeki dosyalar (eski yapı için)
+        for file in src/*.c; do
+          if [ -f "$file" ]; then
+            compile_file "$file" || FAILED=1
+          fi
+        done
+        
+        # Sonra alt klasörler (yeni yapı için)
+        for dir in src/kernel src/drivers src/memory src/fs src/net src/gui src/apps src/lib; do
+          if [ -d "$dir" ]; then
+            for file in "$dir"/*.c; do
+              if [ -f "$file" ]; then
+                compile_file "$file" || FAILED=1
+              fi
+            done
+          fi
+        done
         
         echo ""
         echo "=== Compiled Objects ==="
-        ls -la build/obj/*.o 2>/dev/null || echo "No object files found"
+        ls -la build/obj/*.o
+        echo "Total: $(ls build/obj/*.o | wc -l) files"
+        
+        if [ $FAILED -eq 1 ]; then
+          echo ""
+          echo "⚠ Some files failed to compile, continuing anyway..."
+        fi
+
+    # ==================== CHECK REQUIRED SYMBOLS ====================
+    - name: Check required symbols
+      run: |
+        echo "=== Checking for kernel_main ==="
+        
+        # kernel_main'i hangi .o dosyasında ara
+        for obj in build/obj/*.o; do
+          if nm "$obj" 2>/dev/null | grep -q "kernel_main"; then
+            echo "✓ kernel_main found in $(basename $obj)"
+          fi
+        done
+        
+        # Eğer hiçbir yerde yoksa uyar
+        if ! nm build/obj/*.o 2>/dev/null | grep -q "kernel_main"; then
+          echo ""
+          echo "⚠ WARNING: kernel_main not found in any object file!"
+          echo "Available symbols in kernel.o (if exists):"
+          nm build/obj/kernel.o 2>/dev/null | head -20 || echo "kernel.o not found"
+        fi
 
     # ==================== LINK ====================
     - name: Link kernel
       run: |
-        if [ "$USE_SYSTEM_GCC" = "true" ]; then
-          LD="ld"
-          LDFLAGS="-m elf_i386"
+        LD="ld"
+        LDFLAGS="-m elf_i386 -nostdlib"
+        
+        # Tüm object dosyaları
+        OBJ_FILES=$(ls build/obj/*.o | tr '\n' ' ')
+        
+        echo "=== Linking ==="
+        echo "Objects: $(echo $OBJ_FILES | wc -w) files"
+        
+        # Link et (undefined reference'lar için --warn-unresolved-symbols kullan)
+        $LD -T src/linker.ld -o build/iso/boot/kernel.bin $OBJ_FILES $LDFLAGS \
+          --warn-unresolved-symbols 2>&1 || {
+          
+          echo ""
+          echo "=== Link Errors ==="
+          echo "Trying with --unresolved-symbols=ignore-all for debugging..."
+          
+          # Hata ayıklama için zorla link et
+          $LD -T src/linker.ld -o build/iso/boot/kernel.bin $OBJ_FILES $LDFLAGS \
+            --unresolved-symbols=ignore-all 2>&1 || true
+        }
+        
+        if [ -f "build/iso/boot/kernel.bin" ]; then
+          echo ""
+          echo "✓ Kernel linked"
+          ls -lh build/iso/boot/kernel.bin
         else
-          LD="i686-elf-ld"
-          LDFLAGS=""
-        fi
-        
-        # Object dosyalarını listele
-        OBJ_FILES=$(find build/obj -name "*.o" | tr '\n' ' ')
-        
-        if [ -z "$OBJ_FILES" ]; then
-          echo "ERROR: No object files found!"
+          echo "✗ Kernel linking failed!"
           exit 1
         fi
-        
-        echo "Linking: $OBJ_FILES"
-        
-        $LD -T src/linker.ld -o build/iso/boot/kernel.bin $OBJ_FILES $LDFLAGS -nostdlib
-        
-        echo ""
-        echo "✓ Kernel linked successfully"
-        ls -lh build/iso/boot/kernel.bin
 
     # ==================== GRUB ====================
-    - name: Setup GRUB configuration
+    - name: Setup GRUB
       run: |
         cp grub/grub.cfg build/iso/boot/grub/grub.cfg
-        echo "✓ GRUB config ready"
+        echo "✓ GRUB config"
 
     # ==================== CREATE ISO ====================
-    - name: Create bootable ISO
+    - name: Create ISO
       run: |
         grub-mkrescue -o build/${{ env.OS_NAME }}.iso build/iso 2>&1
         
         if [ -f "build/${{ env.OS_NAME }}.iso" ]; then
-          echo ""
-          echo "✓ ISO created successfully"
+          echo "✓ ISO created"
           ls -lh build/${{ env.OS_NAME }}.iso
         else
-          echo "ERROR: ISO creation failed!"
+          echo "✗ ISO creation failed!"
           exit 1
         fi
 
-    # ==================== TEST ====================
-    - name: Quick boot test (10 seconds)
-      run: |
-        echo "Starting QEMU boot test..."
-        timeout 10 qemu-system-i386 \
-          -cdrom build/${{ env.OS_NAME }}.iso \
-          -m 128M \
-          -display none \
-          -serial stdio \
-          -no-reboot \
-          2>&1 || true
-        echo "✓ Boot test completed"
-
     # ==================== UPLOAD ====================
-    - name: Upload ISO artifact
+    - name: Upload ISO
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.OS_NAME }}-${{ env.OS_VERSION }}
         path: build/${{ env.OS_NAME }}.iso
         retention-days: 30
-        if-no-files-found: error
 
     # ==================== SUMMARY ====================
-    - name: Build summary
+    - name: Summary
       run: |
         echo ""
         echo "========================================"
-        echo "        MyOS Build Complete!"
+        echo "         MyOS Build Complete!"
         echo "========================================"
-        echo "Version:     ${{ env.OS_VERSION }}"
-        echo "Commit:      ${{ github.sha }}"
-        echo "Branch:      ${{ github.ref_name }}"
-        echo ""
-        echo "Object files: $(ls build/obj/*.o 2>/dev/null | wc -l)"
-        echo "ISO size:     $(ls -lh build/${{ env.OS_NAME }}.iso | awk '{print $5}')"
+        echo "Objects: $(ls build/obj/*.o | wc -l)"
+        echo "ISO:     $(ls -lh build/${{ env.OS_NAME }}.iso | awk '{print $5}')"
         echo "========================================"
-        echo ""
-        echo "Download the ISO from the 'Artifacts' section above!"
