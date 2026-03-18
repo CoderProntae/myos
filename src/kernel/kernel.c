@@ -16,7 +16,14 @@
 #include "posix.h"
 #include "gfx.h"
 
-void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
+void kernel_main(multiboot_info_t* mboot, unsigned int magic) {
+
+    volatile unsigned short* vga = (volatile unsigned short*)0xB8000;
+    for (int i = 0; i < 80 * 25; i++) vga[i] = 0x0F00 | ' ';
+    
+    const char* msg = "MyOS v0.3 - Kernel yuklendi!";
+    for (int i = 0; msg[i]; i++) vga[i] = 0x0A00 | msg[i];
+    
     (void)magic;
     heap_init();
 
@@ -47,4 +54,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
     setup_run();
     gui_run();
+
+    while (1) {
+        asm volatile ("hlt");
+    }
 }
